@@ -1,0 +1,137 @@
+//main.cpp
+#include <QApplication>
+#include <QGraphicsItem>
+#include <QGraphicsScene>
+#include <QGraphicsView>
+#include <QGraphicsEllipseItem>
+#include <QGraphicsRectItem>
+#include <QMap>
+#include <QMouseEvent>
+#include <QPointer>
+
+class Notifier;
+typedef QMap<QGraphicsItem*, QPointF> ItemPositionMap;
+typedef QPointer<Notifier> NotifierPointer;
+
+Q_DECLARE_METATYPE(NotifierPointer)
+
+class Notifier : public QObject
+{
+    Q_OBJECT
+    ItemPositionMap m_map;
+public:
+    ItemPositionMap & map() { return m_map; }
+    void notify() { emit notification(); }
+signals:
+    void notification();
+};
+
+class Circle : public QGraphicsEllipseItem
+{
+    typedef QGraphicsEllipseItem inherited;
+    QBrush brush;
+public:
+    Circle(const QPointF & c) : brush("lightgray") {
+        const qreal r = 10.0 + (50.0*qrand())/RAND_MAX;
+        setRect(QRectF(-r, -r, 2.0*r, 2.0*r));
+        setPos(c);
+        setFlags(QGraphicsItem::ItemIsMovable | QGraphicsItem::ItemIsSelectable |
+                 QGraphicsItem::ItemSendsGeometryChanges);
+        setPen(QPen("red"));
+        setBrush(brush);
+    }
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) {
+        if (! scene()) return inherited::itemChange(change, value);
+        QVariant v = scene()->property("notifier");
+        if (! v.isValid()) return inherited::itemChange(change, value);
+        NotifierPointer notifier = v.value<NotifierPointer>();
+        if (change == QGraphicsItem::ItemPositionHasChanged) {
+            notifier->map().insert(this, value.toPointF());
+        }
+        else if (change == QGraphicsItem::ItemSelectedHasChanged) {
+            notifier->map().clear();
+            foreach (QGraphicsItem * item, scene()->selectedItems()) {
+                notifier->map().insert(item, item->pos());
+            }
+        }
+        if (notifier->map().count() >= scene()->selectedItems().count()) {
+            notifier->notify();
+        }
+        return inherited::itemChange(change, value);
+    }
+};
+
+class View : public QGraphicsView
+{
+    Q_OBJECT
+    QGraphicsScene scene;
+    Notifier notifier;
+    QGraphicsSimpleTextItem * text;
+    QGraphicsRectItem * centroid;
+    int deltaCounter;
+public:
+    explicit View(QWidget *parent = 0);
+protected slots:
+    void gotUpdates();
+protected:
+    void mousePressEvent(QMouseEvent *event);
+};
+
+View::View(QWidget *parent) :
+    QGraphicsView(parent),
+    text(new QGraphicsSimpleTextItem()),
+    centroid(new QGraphicsRectItem(-5,-5,10,10)),
+    deltaCounter(0)
+{
+    centroid->setRotation(45.0);
+    centroid->setPen(QPen("blue"));
+    centroid->setZValue(2);
+    text->setPos(5, 470);
+    text->setZValue(1);
+    scene.addItem(centroid);
+    scene.addItem(text);
+    setRenderHint(QPainter::Antialiasing);
+    setScene(&scene);
+    setSceneRect(0,0,500,500);
+    scene.setProperty("notifier", QVariant::fromValue(NotifierPointer(&notifier)));
+    connect(&notifier, SIGNAL(notification()), SLOT(gotUpdates()));
+}
+
+void View::gotUpdates()
+{
+    ItemPositionMap & map = notifier.map();
+    QPointF centroid(0.0, 0.0);
+    qreal area = 0.0;
+    for (ItemPositionMap::const_iterator it = map.begin(); it != map.end(); ++it) {
+        const QRectF r = it.key()->boundingRect();
+        const qreal a = r.width() * r.height();
+        centroid += it.key()->pos() * a;
+        area += a;
+    }
+    QString st = QString("delta #%1 with %2 items").arg(deltaCounter++).arg(map.count());
+    if (area > 0) {
+        centroid /= area;
+        st.append(QString(" centroid at %1, %2").arg(centroid.x(), 0, 'f', 1)
+                    .arg(centroid.y(), 0, 'f', 1));
+        this->centroid->setPos(centroid);
+    }
+    text->setText(st);
+    map.clear();
+}
+
+void View::mousePressEvent(QMouseEvent *event)
+{
+    const QPointF center = mapToScene(event->pos());
+    if (! scene.itemAt(center)) scene.addItem(new Circle(center));
+    QGraphicsView::mousePressEvent(event);
+}
+
+int main(int argc, char *argv[])
+{
+    QApplication a(argc, argv);
+    View v;
+    v.show();
+    return a.exec();
+}
+
+#include "main.moc"

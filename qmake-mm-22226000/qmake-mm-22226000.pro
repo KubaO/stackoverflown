@@ -1,0 +1,5 @@
+TEMPLATE = app
+
+QMAKE_OBJECTIVE_CFLAGS += -foo
+
+OBJECTIVE_SOURCES = main.mm

@@ -8,7 +8,6 @@ class WindowMoveMonitor : public QObject
    bool eventFilter(QObject * target, QEvent * event) {
       if (event->type() == QEvent::Move) {
          QMoveEvent * ev = static_cast<QMoveEvent*>(event);
-         qDebug("*");
          emit windowMoved(ev->pos());
       }
       return QObject::eventFilter(target, event);

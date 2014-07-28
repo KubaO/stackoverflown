@@ -46,13 +46,17 @@ class Dialog : public QWidget {
 public:
    Dialog(QWidget * parent = 0) : QWidget(parent), m_recolorOnResize(false) {
       m_palette << "#E2C42D" << "#E5D796" << "#BEDA2C" << "#D1DD91" << "#E2992D" << "#E5C596";
+      setAttribute(Qt::WA_OpaquePaintEvent);
    }
    Q_SLOT void randomize() {
       m_chosenColors.clear();
       update();
    }
    bool recolorOnResize() const { return m_recolorOnResize; }
-   void setRecolorOnResize(bool recolor) { m_recolorOnResize = recolor; }
+   void setRecolorOnResize(bool recolor) {
+      m_recolorOnResize = recolor;
+      setAttribute(Qt::WA_StaticContents, !m_recolorOnResize);
+   }
 };
 
 int main(int argc, char *argv[])

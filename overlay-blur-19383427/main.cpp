@@ -62,8 +62,7 @@ protected:
         return QWidget::event(ev);
     }
     //! Keeps the children appropriately sized
-    void resizeEvent(QResizeEvent * ev) Q_DECL_OVERRIDE {
-        QWidget::resizeEvent(ev);
+    void resizeEvent(QResizeEvent *) Q_DECL_OVERRIDE {
         foreach(QObject * obj, children()) setSize(obj);
     }
 };
@@ -88,11 +87,11 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     ContainerWidget base;
-    QLabel * w = new QLabel("Dewey, Cheatem and Howe, LLC.", &base);
-    new LoadingOverlay(&base);
-    w->setFont(QFont("times,times new roman", 32));
-    w->setAlignment(Qt::AlignCenter);
-    w->setGraphicsEffect(new QGraphicsBlurEffect);
+    QLabel l("Dewey, Cheatem and Howe, LLC.", &base);
+    l.setFont(QFont("times,times new roman", 32));
+    l.setAlignment(Qt::AlignCenter);
+    l.setGraphicsEffect(new QGraphicsBlurEffect);
+    LoadingOverlay overlay(&base);
     base.show();
     return a.exec();
 }

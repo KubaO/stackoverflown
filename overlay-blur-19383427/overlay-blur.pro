@@ -4,8 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
-
+QT       += gui
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 TARGET = overlay-widget-19362455

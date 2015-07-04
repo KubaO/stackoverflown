@@ -4,11 +4,11 @@
 #include <QPicture>
 #include <QDebug>
 
-void drawText(QPainter & painter, const QPointF & point, int flags,
+void drawText(QPainter & painter, qreal x, qreal y, Qt::Alignment flags,
               const QString & text, QRectF * boundingRect = 0)
 {
    const qreal size = 32767.0;
-   QPointF corner(point.x(), point.y() - size);
+   QPointF corner(x, y - size);
    if (flags & Qt::AlignHCenter) corner.rx() -= size/2.0;
    else if (flags & Qt::AlignRight) corner.rx() -= size;
    if (flags & Qt::AlignVCenter) corner.ry() += size/2.0;
@@ -18,10 +18,10 @@ void drawText(QPainter & painter, const QPointF & point, int flags,
    painter.drawText(rect, flags, text, boundingRect);
 }
 
-void drawText(QPainter & painter, qreal x, qreal y, int flags,
+void drawText(QPainter & painter, const QPointF & point, Qt::Alignment flags,
               const QString & text, QRectF * boundingRect = 0)
 {
-   drawText(painter, QPointF(x,y), flags, text, boundingRect);
+   drawText(painter, point.x(), point.y(), flags, text, boundingRect);
 }
 
 int main(int argc, char *argv[])

@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
    QPicture pic;
    pic.setBoundingRect(QRect(-100, -100, 200, 200));
    QPainter p(&pic);
-   QPointF pt(0, 0);
+   QPointF pt;
 
    p.drawEllipse(pt, 3, 3);
    p.setFont(QFont("Helvetica", 40));

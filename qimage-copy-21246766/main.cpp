@@ -1,27 +1,32 @@
+// This was some QImage copying test used to explore. This is not used in the answer
+// to the question.
 #include <QCoreApplication>
 #include <QSharedPointer>
 #include <QImage>
 #include <QMap>
 #include <QDebug>
 #include <functional>
-#include <core/types_c.h>
+//#include <opencv2/opencv.hpp>
 
 // Stand-in for OpenCV
+#if !defined(__OPENCV_CORE_HPP__)
 namespace cv {
-  class Mat {
+class Mat {
     QSharedPointer<uchar> data_ptr;
-  public:
+public:
     uchar * data;
     int rows, cols;
     Mat(int rows_, int cols_) :
-        data_ptr(new uchar[4*rows*cols], [=](uchar * p){ delete [] p; }),
-        data(data_ptr.data()), rows(rows_), cols(cols_) {}
+        data_ptr(new uchar[4*rows_*cols_], [=](uchar * p){ delete [] p; }),
+    data(data_ptr.data()),
+    rows(rows_), cols(cols_) {}
     Mat() : rows(0), cols(0) {}
-  };
+};
 }
 void readFrame(cv::Mat & frame) {
     frame = cv::Mat(32, 32);
 }
+#endif
 
 QString name(const uchar* ptr) {
     static QMap<const uchar*, QString> pointerNames;
@@ -65,9 +70,9 @@ public:
         emit matSignal(img);
         emit imgSignal(img.image());
         qDebug() << "QImage buffer after" << name(qi.constScanLine(0));
-
-        emit imgSignal(QImage(img.mat().data, img.mat().rows, img.mat().cols, QImage::Format_ARGB32, matDeleter, &img));
-
+        // Note: this is wrong since img is not allocated on the heap.
+        //emit imgSignal(QImage(img.mat().data, img.mat().rows, img.mat().cols, QImage::Format_ARGB32, matDeleter, &img));
+        emit imgSignal(QImage(img.mat().data, img.mat().rows, img.mat().cols, QImage::Format_ARGB32));
     }
     void loop(Qt::ConnectionType conn) {
         connect(this, SIGNAL(matSignal(MatImage)), SLOT(matSlot(MatImage)), conn);
@@ -77,8 +82,8 @@ public:
 
 int main(int argc, char *argv[])
 {
-    qRegisterMetaType<MatImage>();
     QCoreApplication app(argc, argv);
+    qRegisterMetaType<MatImage>();
     Test t1;
     qDebug("** Direct Connection **");
     t1.loop(Qt::AutoConnection);
@@ -88,9 +93,8 @@ int main(int argc, char *argv[])
     t1.loop(Qt::QueuedConnection);
     t1.sendImage();
     t1.disconnect();
-    app.processEvents();
-    return 0;
+    QMetaObject::invokeMethod(qApp, "quit", Qt::QueuedConnection);
+    return app.exec();
 }
-
 
 #include "main.moc"

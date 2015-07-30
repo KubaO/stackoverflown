@@ -36,7 +36,7 @@ protected:
 
 void addImage(QTextDocument * doc, const QString & url) {
     QImage img(100, 100, QImage::Format_ARGB32_Premultiplied);
-    img.fill(Qt::white);
+    img.fill(Qt::blue);
     QPainter p(&img);
     p.drawRect(0, 0, 99, 99);
     p.drawText(img.rect(), url);

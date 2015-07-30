@@ -8,13 +8,13 @@
 class Window: public QWidget
 {
     Q_OBJECT
-    Q_PROPERTY(PropType animProp MEMBER m_animProp NOTIFY animPropUpdated)
+    Q_PROPERTY(PropType animProp MEMBER m_animProp NOTIFY animPropChanged)
     PropType m_animProp;
 public:
     Window();
-    Q_SIGNAL void animPropUpdated();
+    Q_SIGNAL void animPropChanged();
 protected:
-    virtual void paintEvent(QPaintEvent *);
+    void paintEvent(QPaintEvent *);
 };
 
 Window::Window()
@@ -25,13 +25,12 @@ Window::Window()
     anim->setEndValue( 90*100 );
     anim->setLoopCount(-1);
 
-    QPushButton * btn = new QPushButton(this);
+    QPushButton * btn = new QPushButton("Start", this);
     btn->move(20, 20);
-    btn->setText("Start");
 
     connect(btn, SIGNAL(clicked()), anim, SLOT(start()));
     connect(btn, SIGNAL(clicked()), btn, SLOT(deleteLater()));
-    connect(this, SIGNAL(animPropUpdated()), SLOT(update()));
+    connect(this, SIGNAL(animPropChanged()), SLOT(update()));
 }
 
 void Window::paintEvent(QPaintEvent *)

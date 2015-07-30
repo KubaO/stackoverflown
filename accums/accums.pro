@@ -1,9 +1,9 @@
 TEMPLATE = app
-CONFIG += console
+CONFIG += console c++11
 CONFIG -= qt
 
 INCLUDEPATH += \
-    /Users/kuba/wc/software/ThirdParty/eigen3 \
     /opt/local/include
+#    /Users/kuba/wc/software/ThirdParty/eigen3 \
 SOURCES += main.cpp
 

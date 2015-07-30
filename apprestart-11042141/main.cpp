@@ -1,17 +1,13 @@
-//main.cpp
-#include <QtGui/QApplication>
-#include <QtGui/QPushButton>
-#include <QtCore/QDebug>
-#include <QtCore/QFileInfo>
-#include <QtCore/QDir>
-#include <QtCore/QProcess>
+#include <QApplication>
+#include <QPushButton>
+#include <QDebug>
+#include <QDir>
+#include <QProcess>
 
 class Starter : public QObject {
     Q_OBJECT
 public:
-    Starter() {}
-public slots:
-    void start() {
+    Q_SLOT void start() {
         QString app = QApplication::applicationFilePath();
         QStringList arguments = QApplication::arguments();
         QString wd = QDir::currentPath();
@@ -21,14 +17,14 @@ public slots:
     }
 };
 
-int main(int c, char ** v)
+int main(int argc, char ** argv)
 {
-    QApplication a(c,v);
-    QPushButton b("Spawn");
-    Starter s;
-    b.show();
-    s.connect(&b, SIGNAL(clicked()), SLOT(start()));
-    a.exec();
+    QApplication app(argc, argv);
+    QPushButton button("Spawn");
+    Starter starter;
+    starter.connect(&button, SIGNAL(clicked()), SLOT(start()));
+    button.show();
+    return app.exec();
 }
 
 #include "main.moc"

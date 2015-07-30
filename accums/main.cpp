@@ -1,4 +1,4 @@
-#include <Eigen/Dense>
+#include <eigen3/Eigen/Dense>
 #include <iostream>
 #include <boost/bind.hpp>
 #include <boost/ref.hpp>
@@ -22,7 +22,7 @@ int main(){
     VectorXf rn=VectorXf::Random(100);
 
     std::for_each(rn.data(), rn.data()+rn.rows(), bind<void>( ref(acc1), _1 ) );
-    std::for_each(i, 5, f);
+    //std::for_each(i, 5, f); // no clue what was meant here...
 #if 0
     rw=rw.cwiseAbs();
     rw(0)=1000;

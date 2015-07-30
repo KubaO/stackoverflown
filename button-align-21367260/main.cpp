@@ -27,9 +27,9 @@ public:
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     QWidget window;
-    QGridLayout * layout = new QGridLayout(&window);
-    layout->addWidget(new AlignButton(0), 0, 0, 0);
-    layout->addWidget(new AlignButton(Qt::AlignCenter), 1, 0, Qt::AlignCenter);
+    QGridLayout layout(&window);
+    layout.addWidget(new AlignButton(0), 0, 0, 0);
+    layout.addWidget(new AlignButton(Qt::AlignCenter), 1, 0, Qt::AlignCenter);
     window.setMinimumSize(500, 200);
     window.show();
     return app.exec();

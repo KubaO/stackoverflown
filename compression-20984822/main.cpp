@@ -1,3 +1,4 @@
+// This works on Windows only
 #include <QApplication>
 #include <QAbstractEventDispatcher>
 #include <QWidget>
@@ -62,46 +63,51 @@ public:
 
 class MyEvent : public CompressibleEventWrapper<MyEvent> {
 public:
+    MyEvent() { qDebug() << "MyEvent timerId" << timerId(); }
     ~MyEvent() { qDebug() << "deleted"; }
 };
 
 class Widget : public QWidget {
     Q_OBJECT
-    QPlainTextEdit * m_edit;
-    QSpinBox * m_count;
+    QFormLayout m_layout;
+    QPlainTextEdit m_edit;
+    QSpinBox m_count;
+    QPushButton m_post;
     bool event(QEvent * event) {
         if (dynamic_cast<MyEvent*>(event)) {
             qDebug() << "rcv";
-            m_edit->appendPlainText("MyEvent was received.");
+            m_edit.appendPlainText("MyEvent was received.");
             return true;
         }
         return QWidget::event(event);
     }
     Q_SLOT void sendEvents() {
-        m_edit->appendPlainText(QString("\nPosting %1 events").arg(m_count->value()));
-        for (int i = 0; i < m_count->value(); ++ i) {
+        m_edit.appendPlainText(QString("\nPosting %1 events").arg(m_count.value()));
+        for (int i = 0; i < m_count.value(); ++ i) {
             QCoreApplication::postEvent(this, new MyEvent);
         }
     }
 public:
     Widget(QWidget * parent = 0) : QWidget(parent),
-        m_edit(new QPlainTextEdit), m_count(new QSpinBox)
+        m_layout(this),
+        m_post("Post")
     {
-        QFormLayout * l = new QFormLayout(this);
-        QPushButton * invoke = new QPushButton("Post");
-        m_edit->setReadOnly(true);
-        m_count->setRange(1, 1000);
-        l->addRow("Number of events to post", m_count);
-        l->addRow(invoke);
-        l->addRow(m_edit);
-        connect(invoke, SIGNAL(clicked()), this, SLOT(sendEvents()));
+        m_edit.setReadOnly(true);
+        m_count.setRange(1, 1000);
+        m_layout.addRow("Number of events to post", &m_count);
+        m_layout.addRow(&m_post);
+        m_layout.addRow(&m_edit);
+        connect(&m_post, SIGNAL(clicked()), SLOT(sendEvents()));
     }
 };
 
 class App : public QApplication {
     bool compressEvent(QEvent * event, QObject *receiver, QPostEventList * list) {
         if (dynamic_cast<MyEvent*>(event)) {
+            #ifndef Q_OS_WIN
+            // This deadlocks :(
             QCoreApplication::removePostedEvents(receiver, event->type());
+            #endif
 
             bool rc = QApplication::compressEvent(event, receiver, list);
             qDebug() << event << receiver << rc;

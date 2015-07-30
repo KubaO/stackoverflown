@@ -10,7 +10,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
   CONFIG += c++11
 }
 
-INCLUDEPATH += /opt/local/include/opencv2
+INCLUDEPATH += /opt/local/include
 LIBS += -L /opt/local/lib -lopencv_core
 
 TARGET = qimage-copy-21246766

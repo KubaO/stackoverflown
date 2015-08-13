@@ -19,7 +19,9 @@ public:
    Q_SLOT void sink(const Copyable & data) {
       qDebug() << "got" << static_cast<const void*>(&data) << "in thread"
                << QThread::currentThread();
-      qApp->quit();
+      // Queue a quit since we are racing with app.exec(). qApp->quit() is a no-op before
+      // the app.exec() has had a chance to block.
+      QMetaObject::invokeMethod(qApp, "quit", Qt::QueuedConnection);
    }
 };
 

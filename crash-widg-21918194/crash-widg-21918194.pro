@@ -4,6 +4,4 @@ TEMPLATE = app
 CONFIG += c++11
 SOURCES += main.cpp
 FORMS += gui.ui
-
-HEADERS += \
-    gui.h
+HEADERS += gui.h

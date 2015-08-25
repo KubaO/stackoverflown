@@ -11,22 +11,12 @@
 
 static const auto TypeKey = QStringLiteral("Type");
 
-/// The object factory key
-class ClassAndType : public QPair<QString, QString> {
-public:
-    ClassAndType(const ClassAndType & other) : QPair(other) {}
-    ClassAndType(const QString & class_, const QString & type_) : QPair(class_, type_) {}
-    QString & theClass() { return first; }
-    const QString & theClass() const { return first; }
-    QString & theType() { return second; }
-    const QString & theType() const { return second; }
-};
-
 /// A factory that keeps item prototypes and makes their clones
 class ItemFactory {
     Q_DISABLE_COPY(ItemFactory)
 public:
     typedef QSharedPointer<QStandardItem> ItemPtr;
+    typedef QPair<QString, QString> ClassAndType;
     QMap<ClassAndType, ItemPtr> m_map;
 public:
     ItemFactory() {}
@@ -41,9 +31,8 @@ public:
     QStandardItem * make(const QString & class_, const QString & type_, QStandardItem * item = nullptr) const;
     QStringList keys(const QString & class_) const {
         QStringList result;
-        for (auto const & key : m_map.keys()) {
-            if (key.theClass() == class_) result << key.theType();
-        }
+        for (auto const & key : m_map.keys())
+            if (key.first == class_) result << key.second;
         return result;
     }
 };
@@ -104,7 +93,7 @@ public:
     PrototypeItem(const QString & class_, const QString & type_,
                   const QVariantList & keyValues = QVariantList()) :
         QStandardItem(class_) {
-        setChild(0, 0, new QStandardItem("Type"));
+        setChild(0, 0, new QStandardItem(TypeKey));
         setChild(0, 1, new TypeItem(type_));
         for (int i = (keyValues.size()/2)-1; i >= 0; --i) {
             setChild(1 + i, 0, new QStandardItem(keyValues.at(i*2).toString()));

@@ -1,0 +1,46 @@
+@if "%QT%" == "true"
+@if "%CONSOLE%" == "false"
+#include <QtWidgets>
+@else
+#include <QtCore>
+@endif
+
+@if "%OBJECT%" != ""
+class %OBJECT% : public QObject {
+    Q_OBJECT
+public:
+@if "%CPP11INITS%" == "true"
+    %OBJECT%(QObject * parent = 0) : QObject{parent} {}
+@else
+    %OBJECT%(QObject * parent = 0) : QObject(parent) {}
+@endif
+};
+
+@endif
+int main(int argc, char ** argv) {
+@if "%CONSOLE%" == "false"
+@if "%CPP11INITS%" == "true"
+    QApplication app{argc, argv};
+@else
+    QApplication app(argc, argv);
+@endif
+@else
+@if "%CPP11INITS%" == "true"
+    QCoreApplication app{argc, argv};
+@else
+    QCoreApplication app(argc, argv);
+@endif
+@endif
+    return app.exec();
+}
+@if "%OBJECT%" != ""
+
+#include "main.moc"
+@endif
+@else
+#include <iostream>
+
+int main()
+{
+}
+@endif

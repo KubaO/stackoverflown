@@ -39,6 +39,6 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 @endif
 CONFIG -= qt app_bundle
 @endif
-
+TARGET = %ProjectName%
 TEMPLATE = app
 SOURCES += main.cpp

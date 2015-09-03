@@ -1,3 +1,6 @@
+@if "%GITHUBLINK%" == "true"
+// %GITHUBURL%/%ProjectName%
+@endif
 @if "%QT%" == "true"
 @if "%CONSOLE%" == "false"
 #include <QtWidgets>

@@ -16,10 +16,7 @@ public:
     /// Sets a new rectangle on the item
     static void setRectOn(QGraphicsItem * item, const QRectF & rect) {
         auto ellipse = dynamic_cast<QGraphicsEllipseItem*>(item);
-        if (ellipse) {
-            ellipse->setRect(rect);
-            return;
-        }
+        if (ellipse) return ellipse->setRect(rect);
     }
 };
 
@@ -41,10 +38,10 @@ class ResizeHelperItem : public QGraphicsObject {
     Qt::Edges m_edges;
     void newGeometry() {
         prepareGeometryChange();
-        auto parentRect = parentItem()->boundingRect();
+        auto parentRect = Tr::rectFor(parentItem());
         m_rect.setTopLeft(mapFromParent(parentRect.topLeft()));
         m_rect.setBottomRight(mapFromParent(parentRect.bottomRight()));
-        m_pen.setWidthF(std::max(m_rect.width(), m_rect.height()) * 0.1);
+        m_pen.setWidthF(std::min(m_rect.width(), m_rect.height()) * 0.1);
         m_pen.setJoinStyle(Qt::MiterJoin);
     }
 public:
@@ -77,23 +74,16 @@ public:
         ev->accept();
     }
     void mouseMoveEvent(QGraphicsSceneMouseEvent * ev) Q_DECL_OVERRIDE {
-        auto pos = mapToItem(parentItem()->parentItem(), ev->pos());
-        auto newPos = parentItem()->pos();
-        if (m_edges & Qt::LeftEdge)
-            newPos.setX(pos.x());
-        if (m_edges & Qt::TopEdge)
-            newPos.setY(pos.y());
-        if (m_edges & Qt::LeftEdge || m_edges & Qt::TopEdge)
-            parentItem()->setPos(newPos);
-        pos = mapToItem(parentItem(), ev->pos());
+        auto pos = mapToItem(parentItem(), ev->pos());
         auto rect = Tr::rectFor(parentItem());
-        if (m_edges & Qt::RightEdge)
-            rect.setRight(pos.x());
-        if (m_edges & Qt::BottomEdge)
-            rect.setBottom(pos.y());
-        if (m_edges & Qt::RightEdge || m_edges & Qt::BottomEdge)
+        if (m_edges & Qt::LeftEdge) rect.setLeft(pos.x());
+        if (m_edges & Qt::TopEdge) rect.setTop(pos.y());
+        if (m_edges & Qt::RightEdge) rect.setRight(pos.x());
+        if (m_edges & Qt::BottomEdge) rect.setBottom(pos.y());
+        if (!!m_edges) {
             Tr::setRectOn(parentItem(), rect);
-        if (!!m_edges) newGeometry();
+            newGeometry();
+        }
     }
 };
 

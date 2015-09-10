@@ -125,7 +125,9 @@ class ParamBlock : public QWidget {
    QLabel minLabel, maxLabel;
    QLineEdit edit;
    void on_edit_textEdited(const QString & text) {
-      auto value = text.toInt();
+      bool ok;
+      auto value = text.toInt(&ok);
+      if (!ok) return;
       auto newValue = qBound(slider.minimum(), value, slider.maximum());
       slider.setValue(newValue);
    }

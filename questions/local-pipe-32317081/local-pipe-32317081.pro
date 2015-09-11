@@ -1,4 +1,4 @@
-QT       += widgets core-private
+QT       += core-private
 TARGET = local-pipe-32317081
 CONFIG   += c++11
 TEMPLATE = app

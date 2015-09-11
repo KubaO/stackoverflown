@@ -106,6 +106,66 @@ void expect(QState * src, QIODevice * dev, const QByteArray & data, QAbstractSta
    if (timeout) delay(src, timeout, dstTimeout);
 }
 
+template <class D> class Base {
+protected:
+   QAbstractState* m_src { nullptr }, *m_dst { nullptr };
+   Base(QAbstractState * src) : src(src) {}
+public:
+   QState * srcState() const { return src ? qobject_cast<QState*>(src) : nullptr; }
+   virtual void newDst() { if (!dst) dst = new QState(src->parentState()); }
+   operator QAbstractState*() { newDst(); return dst; }
+   D & d_() { return static_cast<D*>(this); }
+   D & dst(QAbstractState * dst_) { dst = dst_; newDst(); return d_(); }
+   D & n(const char * name) { src->setObjectName(QLatin1String(name)); return d_(); }
+
+};
+
+struct Send : Base<Send> {
+   void newDst() Q_DECL_OVERRIDE {
+      Base::newDst();
+      if (srcState()) srcState()->addTransition(dst);
+   }
+   Send(QAbstractState * src, QIODevice * dev, const QByteArray & data) : Base(src) {
+      QObject::connect(src, &QState::entered, dev, [dev, data]{
+         dev->write(data);
+      });
+   }
+};
+
+struct Delay : Base<Delay> {
+   QTimer * timer;
+   void newDst() Q_DECL_OVERRIDE {
+      Base::newDst();
+      if (m_dst && srcState()) srcState()->addTransition(timer, SIGNAL(timeout()), m_dst);
+   }
+   Delay(QAbstractState * src, int ms) : timer(new QTimer(src)) {
+      timer->setSingleShot(true);
+      timer->setInterval(ms);
+      QObject::connect(src, &QState::entered, timer, static_cast<void (QTimer::*)()>(&QTimer::start));
+      QObject::connect(src, &QState::exited,  timer, &QTimer::stop);
+   }
+};
+
+struct Expect : Base<Expect> {
+   Delay * delay { nullptr };
+   const QByteArray data;
+   QAbstractState* newDst() Q_DECL_OVERRIDE {
+      Base::newDst();
+      if (delay) delay->dst(m_dst);
+      addTransition(src, m_dst, dev, SIGNAL(readyRead()), [dev, data]{
+         return hasLine(dev, data);
+      });
+   }
+   Expect & timeout(int ms) {
+      if (!delay) delay = new Delay(src, ms);
+      else delay->timer->setInterval(ms);
+      return *this;
+   }
+   Expect(QAbstractState * src, QIODevice * dev, const QByteArray & data) :
+      Base(src), data(data)
+   {}
+};
+
 class Device : public QObject {
    Q_OBJECT
    Q_PROPERTY (bool running READ isRunning NOTIFY runningChanged)
@@ -127,11 +187,19 @@ public:
          });
       connect(&m_mach, &QStateMachine::runningChanged, this, &Device::runningChanged);
       m_mach.setInitialState(&s_init);
+      QAbstractState * s_booting =  Expect(&s_init,    &m_dev, "boot").n("s_init");
+      QAbstractState * s_firmware = Delay(s_booting, 500).n("s_booting");
+      QAbstractState *  s_loaded =  Send(s_firmware,   &m_dev, "boot successful\n").n("s_firmware");
+                                    Expect(s_firmware, &m_dev, ":00000001FF").setDst(s_loaded);
+                                    Send(s_loaded,     &m_dev, "load successful\n");
+
+#if 0
       expect(&s_init, &m_dev, "boot", &s_booting);
       delay (&s_booting, 500, &s_firmware);
       send  (&s_firmware, &m_dev, "boot successful\n");
-      expect(&s_firmware, &m_dev, ":00000001FF", &s_loaded);
+      expect(&s_firmware, &m_dev, , &s_loaded);
       send  (&s_loaded,   &m_dev, "load successful\n");
+#endif
    }
    Q_SLOT void start() { m_mach.start(); }
    Q_SLOT void stop() { m_mach.stop(); }

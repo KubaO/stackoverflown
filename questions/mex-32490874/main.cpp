@@ -41,9 +41,9 @@ public:
       m_data(Tr::check(data, index)),
       m_ptr(Tr::ptr(m_data))
    {}
-   MxArray(int n, int m, mxArray * &out) :
-      m_data(out = Tr::create(n, m)),
-      m_ptr(Tr::ptr(out))
+   MxArray(int n, int m, mxArray * out[], int index) :
+      m_data(out[index] = Tr::create(n, m)),
+      m_ptr(Tr::ptr(out[index]))
    {}
    size_t size() const { return mxGetNumberOfElements(m_data) - offset(); }
    int n_dims() const { return mxGetNumberOfDimensions(m_data); }
@@ -55,8 +55,8 @@ public:
       m_ptr += offset;
       return *this;
    }
-   friend T operator+(MxArray lhs, const MxArray & rhs) {
-      return lhs += rhs;
+   friend MxArray operator+(MxArray lhs, ptrdiff_t offset) {
+      return lhs += offset;
    }
    void resetOffset() { m_ptr = Tr::ptr(m_data); }
    iterator begin() { return m_ptr; }
@@ -112,9 +112,9 @@ struct Params {
       X(prhs, 2),
       inGridSize(prhs, 3),
       NumPts(s.size()),
-      Points(1, NumPts, plhs[0]),
-      Jacobian(NumPts, X.size(), plhs[1]),
-      Valid(NumPts, 1, plhs[2])
+      Points(1, NumPts, plhs, 0),
+      Jacobian(NumPts, X.size(), plhs, 1),
+      Valid(NumPts, 1, plhs, 2)
    {
       std::copy(inGridSize.begin(), inGridSize.end(), GridSize.begin());
    }

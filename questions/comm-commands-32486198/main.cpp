@@ -106,10 +106,100 @@ void expect(QState * src, QIODevice * dev, const QByteArray & data, QAbstractSta
    if (timeout) delay(src, timeout, dstTimeout);
 }
 
+//
+
+void test0() {
+
+}
+
+#if 0
+
+expect(&s_init, &m_dev, "boot", &s_booting);
+delay (&s_booting, 500, &s_firmware);
+send  (&s_firmware, &m_dev, "boot successful\n");
+expect(&s_firmware, &m_dev, ":00000001FF", &s_loaded);
+send  (&s_loaded,   &m_dev, "load successful\n");
+
+#endif
+
+//
+
+#if 1
+class Stateful;
+class Op {
+   friend class Stateful;
+protected:
+   QString name;
+   virtual QAbstractState * make(QAbstractState * s) {
+      if (!name.isEmpty()) s->setObjectName(name);
+      return s;
+   }
+public:
+   Op & s(const char * name) { this->name = name; return *this; }
+};
+
+class Param {
+public:
+   const int id;
+   Param(int id) : id(id) {}
+   virtual ~Param() {}
+};
+
+class Stateful : public QObject {
+   friend class Op;
+   QMap<int, Param*> params;
+public:
+   QStateMachine * m_mach;
+   QAbstractState * m_state;
+public:
+   Stateful(QStateMachine * mach) : m_mach(mach) {}
+   Stateful & operator+(Op & op) { m_state = op.make(nullptr); m_mach->addState(m_state); return *this; }
+   Stateful & operator|(Op & op) { op.make(m_state); return *this; }
+   Stateful & operator*(Param & param) {
+};
+
+class ADevice {
+   QIODevice * m_dev;
+   int id { 1 };
+public:
+   ADevice(QIODevice * dev) : m_dev(dev) {}
+   void operator()(Stateful*o) { o->setProperty(key, m_dev); }
+};
+const char ADevice::key[] = "p_device";
+
+class Final : public Op {
+protected:
+   QAbstractState * make(QAbstractState* s) Q_DECL_OVERRIDE {
+      if (!s) s = new QFinalState;
+      return Op::make(s);
+   }
+};
+
+
+void test() {
+
+   QStateMachine m_mach;
+   Stateful s{&m_mach};
+//s * Device(&m_device);
+   s + Final()/*.failure()*/ .s("s_failed");
+#if 0
+s + Send("boot\n") .s("s_boot");
+s | Expect("boot successful", 1000);
+s + Send("HULLOTHERE\n:00000001FF\n") .s("s_send");
+s | Expect("load successful", 1000);
+s + Final() .s("ok");
+#endif
+
+}
+
+#endif
+//
+
+#if 0
 template <class D> class Base {
 protected:
    QAbstractState* m_src { nullptr }, *m_dst { nullptr };
-   Base(QAbstractState * src) : src(src) {}
+   Base(QAbstractState * src) : m_src(src) {}
 public:
    QState * srcState() const { return src ? qobject_cast<QState*>(src) : nullptr; }
    virtual void newDst() { if (!dst) dst = new QState(src->parentState()); }
@@ -165,6 +255,7 @@ struct Expect : Base<Expect> {
       Base(src), data(data)
    {}
 };
+#endif
 
 class Device : public QObject {
    Q_OBJECT
@@ -187,17 +278,29 @@ public:
          });
       connect(&m_mach, &QStateMachine::runningChanged, this, &Device::runningChanged);
       m_mach.setInitialState(&s_init);
+
+#if 0
+      z(&m_mach).device(&m_dev);
+      z("s_init")    .Expect("boot");
+      z("s_booting") .Delay(500);
+      z("s_firmware").Send("boot successful\n");
+      z()            .Expect(":00000001FF");
+      z("s_loaded")  .Send("load successful\n");
+#endif
+
+#if 0
       QAbstractState * s_booting =  Expect(&s_init,    &m_dev, "boot").n("s_init");
       QAbstractState * s_firmware = Delay(s_booting, 500).n("s_booting");
       QAbstractState *  s_loaded =  Send(s_firmware,   &m_dev, "boot successful\n").n("s_firmware");
                                     Expect(s_firmware, &m_dev, ":00000001FF").setDst(s_loaded);
                                     Send(s_loaded,     &m_dev, "load successful\n");
 
-#if 0
+#else
+
       expect(&s_init, &m_dev, "boot", &s_booting);
       delay (&s_booting, 500, &s_firmware);
       send  (&s_firmware, &m_dev, "boot successful\n");
-      expect(&s_firmware, &m_dev, , &s_loaded);
+      expect(&s_firmware, &m_dev, ":00000001FF", &s_loaded);
       send  (&s_loaded,   &m_dev, "load successful\n");
 #endif
    }
@@ -232,10 +335,31 @@ public:
          });
       connect(&m_mach, &QStateMachine::runningChanged, this, &Programmer::runningChanged);
       m_mach.setInitialState(&s_boot);
+#if 0
+      Stateful s(&m_mach);
+      s.device(&m_device);
+      s("s_failed").failure().final();
+      s("s_boot").Send("boot\n");
+      s          .Expect("boot successful", 1000);
+      s("s_send").Send("HULLOTHERE\n:00000001FF\n");
+      s          .Expect("load successful", 1000);
+      s("s_ok").final();
+      s();
+
+      Stateful s(&m_mach);
+      s * Device(&m_device);
+      s + Final().failure() .s("s_failed");
+      s + Send("boot\n") .("s_boot");
+      s | Expect("boot successful", 1000);
+      s + Send("HULLOTHERE\n:00000001FF\n") .s("s_send");
+      s | Expect("load successful", 1000);
+      s + Final() .s("ok");
+#else
       send  (&s_boot, &m_port, "boot\n");
       expect(&s_boot, &m_port, "boot successful", &s_send, 1000, &s_failed);
       send  (&s_send, &m_port, ":HULLOTHERE\n:00000001FF\n");
       expect(&s_send, &m_port, "load successful", &s_ok, 1000, &s_failed);
+#endif
    }
    Q_SLOT void start() { m_mach.start(); }
    Q_SIGNAL void runningChanged(bool);

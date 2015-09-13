@@ -5,20 +5,18 @@
 #include <QSocketNotifier>
 #include <array>
 
-template <int N> struct PosixSignal {};
-
 class PosixSignalProxy : public QObject
 {
     Q_OBJECT
     typedef std::array<int,2> Sockets;
     PosixSignalProxy(int signum, int flags, QObject * parent, Sockets &, void (*handler)(int));
 public:
-    template <int N>
-    PosixSignalProxy(PosixSignal<N>, int posixSignalFlags, QObject *parent = nullptr) :
-        PosixSignalProxy(N, posixSignalFlags, parent, Data<N>::sockets(), Data<N>::handler) {}
-    template <int N>
-    PosixSignalProxy(PosixSignal<N>, QObject *parent = nullptr) :
-        PosixSignalProxy(PosixSignal<N>(), 0, parent) {}
+    template <typename T>
+    PosixSignalProxy(T, int signum, int posixSignalFlags, QObject *parent = nullptr) :
+        PosixSignalProxy(signum, posixSignalFlags, parent, Data<T>::sockets(), Data<T>::handler) {}
+    template <typename T>
+    PosixSignalProxy(T p, int signum, QObject *parent = nullptr) :
+        PosixSignalProxy(p, signum, 0, parent) {}
 
     /**
      * Qt signal which is emitted right after receiving and handling the POSIX
@@ -28,7 +26,7 @@ public:
     /// The POSIX signal number
     int signal() const { return m_signum; }
 private:
-    template <int N> struct Data {
+    template <typename T> struct Data {
         static Sockets & sockets() {
             static Sockets data;
             return data;

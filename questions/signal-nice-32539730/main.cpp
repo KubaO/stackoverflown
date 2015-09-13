@@ -4,7 +4,7 @@
 
 int main(int argc, char ** argv) {
     QCoreApplication app{argc, argv};
-    PosixSignalProxy proxy{PosixSignal<2>()};
+    PosixSignalProxy proxy{[]{}, 2};
     return app.exec();
 }
 

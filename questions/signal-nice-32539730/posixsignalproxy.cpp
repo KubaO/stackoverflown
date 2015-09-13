@@ -17,7 +17,7 @@ PosixSignalProxy::PosixSignalProxy(int signum, int flags, QObject *parent, Socke
     m_sockets(makePair(sockets)),
     m_notifier(m_sockets[1], QSocketNotifier::Read, this)
 {
-    connect(&m_notifier, &QSocketNotifier::activated, this, &PosixSignalProxy::handleSignal);
+    connect(&m_notifier, &QSocketNotifier::activated, this, &PosixSignalProxy::handlePipe);
 
     struct sigaction sa;
     sa.sa_handler = handler;
@@ -34,7 +34,7 @@ void PosixSignalProxy::staticSignalHandler(PosixSignalProxy::Sockets & sockets)
     ::write(sockets[0], &tmp, sizeof(tmp));
 }
 
-void PosixSignalProxy::handleSignal()
+void PosixSignalProxy::handlePipe()
 {
     m_notifier.setEnabled(false);
     char tmp;

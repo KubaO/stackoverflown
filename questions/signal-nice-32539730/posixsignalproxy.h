@@ -13,34 +13,32 @@ class PosixSignalProxy : public QObject
 public:
     template <typename T>
     PosixSignalProxy(T, int signum, int posixSignalFlags, QObject *parent = nullptr) :
-        PosixSignalProxy(signum, posixSignalFlags, parent, Data<T>::sockets(), Data<T>::handler) {}
+        PosixSignalProxy(signum, posixSignalFlags, parent, sockets<T>(), handler<T>) {}
     template <typename T>
     PosixSignalProxy(T p, int signum, QObject *parent = nullptr) :
         PosixSignalProxy(p, signum, 0, parent) {}
 
     /**
-     * Qt signal which is emitted right after receiving and handling the POSIX
+     * Qt signal that is emitted right after receiving and handling the POSIX
      * signal. In the Qt signal handler (slot) you are allowed to do anything.
      */
     Q_SIGNAL void receivedSignal();
     /// The POSIX signal number
     int signal() const { return m_signum; }
 private:
-    template <typename T> struct Data {
-        static Sockets & sockets() {
-            static Sockets data;
-            return data;
-        }
-        static void handler(int) {
-            PosixSignalProxy::staticSignalHandler(sockets());
-        }
-    };
-
     int m_signum;
     Sockets & m_sockets;
     QSocketNotifier m_notifier;
 
-    void handleSignal();
+    template <typename T> static inline Sockets & sockets() {
+        static Sockets data;
+        return data;
+    }
+    template <typename T> static void handler(int) {
+        staticSignalHandler(sockets<T>());
+    }
+
+    void handlePipe();
     static void staticSignalHandler(Sockets &);
 };
 

@@ -108,154 +108,149 @@ void expect(QState * src, QIODevice * dev, const QByteArray & data, QAbstractSta
 
 //
 
-void test0() {
-
-}
-
-#if 0
-
-expect(&s_init, &m_dev, "boot", &s_booting);
-delay (&s_booting, 500, &s_firmware);
-send  (&s_firmware, &m_dev, "boot successful\n");
-expect(&s_firmware, &m_dev, ":00000001FF", &s_loaded);
-send  (&s_loaded,   &m_dev, "load successful\n");
-
-#endif
-
-//
-
-#if 1
 class Stateful;
+
 class Op {
    friend class Stateful;
 protected:
-   QString name;
-   virtual QAbstractState * make(QAbstractState * s) {
-      if (!name.isEmpty()) s->setObjectName(name);
-      return s;
-   }
+   QString m_name;
+   bool m_isNew { false };
+   virtual QAbstractState * make(Stateful & s);
 public:
-   Op & s(const char * name) { this->name = name; return *this; }
+   Op & s(const char * name) { m_name = name; return *this; }
+   virtual ~Op() {}
 };
 
-class Param {
-public:
-   const int id;
-   Param(int id) : id(id) {}
+struct Param {
+   const int m_id;
+   explicit Param(int id) : m_id(id) {}
    virtual ~Param() {}
 };
 
-class Stateful : public QObject {
+class Stateful {
    friend class Op;
-   QMap<int, Param*> params;
+   QMap<int, QSharedPointer<Param>> m_params;
+   struct Level {
+      QAbstractState *cur { nullptr }, *next { nullptr }, *failure { nullptr };
+      Level(QAbstractState * c) : cur(c) {}
+      Level() {}
+   };
+   QStack<Level> m_levels;
+   QStack<QSharedPointer<Op>> m_ops;
+   Level & top() { return m_levels.top(); }
+   const Level & top() const { return m_levels.top(); }
 public:
-   QStateMachine * m_mach;
-   QAbstractState * m_state;
-public:
-   Stateful(QStateMachine * mach) : m_mach(mach) {}
-   Stateful & operator+(Op & op) { m_state = op.make(nullptr); m_mach->addState(m_state); return *this; }
-   Stateful & operator|(Op & op) { op.make(m_state); return *this; }
-   Stateful & operator*(Param & param) {
-};
-
-class ADevice {
-   QIODevice * m_dev;
-   int id { 1 };
-public:
-   ADevice(QIODevice * dev) : m_dev(dev) {}
-   void operator()(Stateful*o) { o->setProperty(key, m_dev); }
-};
-const char ADevice::key[] = "p_device";
-
-class Final : public Op {
-protected:
-   QAbstractState * make(QAbstractState* s) Q_DECL_OVERRIDE {
-      if (!s) s = new QFinalState;
-      return Op::make(s);
+   Stateful(QAbstractState * parent) {
+      m_levels.push(Level(parent));
+      m_levels.push(Level());
    }
-};
-
-
-void test() {
-
-   QStateMachine m_mach;
-   Stateful s{&m_mach};
-//s * Device(&m_device);
-   s + Final()/*.failure()*/ .s("s_failed");
-#if 0
-s + Send("boot\n") .s("s_boot");
-s | Expect("boot successful", 1000);
-s + Send("HULLOTHERE\n:00000001FF\n") .s("s_send");
-s | Expect("load successful", 1000);
-s + Final() .s("ok");
-#endif
-
-}
-
-#endif
-//
-
-#if 0
-template <class D> class Base {
-protected:
-   QAbstractState* m_src { nullptr }, *m_dst { nullptr };
-   Base(QAbstractState * src) : m_src(src) {}
-public:
-   QState * srcState() const { return src ? qobject_cast<QState*>(src) : nullptr; }
-   virtual void newDst() { if (!dst) dst = new QState(src->parentState()); }
-   operator QAbstractState*() { newDst(); return dst; }
-   D & d_() { return static_cast<D*>(this); }
-   D & dst(QAbstractState * dst_) { dst = dst_; newDst(); return d_(); }
-   D & n(const char * name) { src->setObjectName(QLatin1String(name)); return d_(); }
-
-};
-
-struct Send : Base<Send> {
-   void newDst() Q_DECL_OVERRIDE {
-      Base::newDst();
-      if (srcState()) srcState()->addTransition(dst);
-   }
-   Send(QAbstractState * src, QIODevice * dev, const QByteArray & data) : Base(src) {
-      QObject::connect(src, &QState::entered, dev, [dev, data]{
-         dev->write(data);
-      });
-   }
-};
-
-struct Delay : Base<Delay> {
-   QTimer * timer;
-   void newDst() Q_DECL_OVERRIDE {
-      Base::newDst();
-      if (m_dst && srcState()) srcState()->addTransition(timer, SIGNAL(timeout()), m_dst);
-   }
-   Delay(QAbstractState * src, int ms) : timer(new QTimer(src)) {
-      timer->setSingleShot(true);
-      timer->setInterval(ms);
-      QObject::connect(src, &QState::entered, timer, static_cast<void (QTimer::*)()>(&QTimer::start));
-      QObject::connect(src, &QState::exited,  timer, &QTimer::stop);
-   }
-};
-
-struct Expect : Base<Expect> {
-   Delay * delay { nullptr };
-   const QByteArray data;
-   QAbstractState* newDst() Q_DECL_OVERRIDE {
-      Base::newDst();
-      if (delay) delay->dst(m_dst);
-      addTransition(src, m_dst, dev, SIGNAL(readyRead()), [dev, data]{
-         return hasLine(dev, data);
-      });
-   }
-   Expect & timeout(int ms) {
-      if (!delay) delay = new Delay(src, ms);
-      else delay->timer->setInterval(ms);
+   ~Stateful() { flush(); }
+   template <typename P>
+   Stateful & operator*(const P & param) {
+      m_params[param.m_id] = QSharedPointer<P>::create(param);
       return *this;
    }
-   Expect(QAbstractState * src, QIODevice * dev, const QByteArray & data) :
-      Base(src), data(data)
-   {}
+   Param * param(int id) const {
+      auto it = m_params.find(id);
+      return (it != m_params.end()) ? (*it).data() : nullptr;
+   }
+   template <typename T> T * param() const {
+      return dynamic_cast<T*>(param(T::id()));
+   }
+   template <typename O>
+   Stateful & operator+(const O & op) {
+      auto copy = QSharedPointer<O>::create(op);
+      copy->m_isNew = true;
+      m_ops.push(copy);
+      return *this;
+   }
+   template <typename O>
+   Stateful & operator|(const O & op) {
+      m_ops.push(QSharedPointer<O>::create(op));
+      return *this;
+   }
+   QAbstractState * state() const {
+      return top().cur ? top().cur : (top().cur = new QState);
+   }
+   QAbstractState * next() const { return top().next; }
+   QAbstractState * failure() const { return top().failure; }
+   template <typename T> QAbstractState * newState() {
+      return top().cur = new T;
+   }
+   void flush() {
+      while (! m_ops.isEmpty()) {
+         auto it = m_ops.end() - 1;
+         int n = 0;
+         while (! (*it)->m_isNew) { --it; n++; }
+         top().cur = nullptr;
+         auto successor = (*it)->make(*this);
+         while (n--) m_ops.pop()->make(*this);
+         m_ops.pop();
+         Q_ASSERT(successor == state());
+         top().next = state();
+      }
+   }
 };
+
+QAbstractState * Op::make(Stateful & s){
+   if (!m_name.isEmpty()) s.state()->setObjectName(m_name);
+   return s.state();
+}
+
+//
+
+struct ADevice : Param {
+   QPointer<QIODevice> device;
+   static int id() { return 1; }
+   explicit ADevice(QIODevice * device) : Param(id()), device(device) {}
+};
+
+class Final : public Op {
+   bool m_isFailure { false };
+protected:
+   QAbstractState * make(Stateful & s) Q_DECL_OVERRIDE {
+      Q_ASSERT(m_isNew);
+      s.newState<QFinalState>();
+      return Op::make(s);
+   }
+public:
+   Final & failure() { m_isFailure = true; return *this; }
+};
+
+class Send : public Op {
+   QByteArray m_data;
+protected:
+   QAbstractState * make(Stateful &s) Q_DECL_OVERRIDE {
+      Op::make(s);
+      auto p = s.param<ADevice>();
+      Q_ASSERT(p);
+      auto dev = p->device;
+      auto data = m_data;
+      QObject::connect(s.state(), &QState::entered, dev, [dev, data]{
+         dev->write(data);
+      });
+      return s.state();
+   }
+public:
+   Send(const QByteArray & data) : m_data(data) {}
+};
+
+void test() {
+   QBuffer m_device;
+   QStateMachine m_mach;
+   Stateful s{&m_mach};
+   s * ADevice(&m_device);
+   s + Final().failure() .s("s_failed");
+   s + Send("boot\n") .s("s_boot");
+#if 0
+   s | Expect("boot successful", 1000);
 #endif
+   s + Send("HULLOTHERE\n:00000001FF\n") .s("s_send");
+#if 0
+   s | Expect("load successful", 1000);
+#endif
+   s + Final() .s("s_ok");
+}
 
 class Device : public QObject {
    Q_OBJECT
@@ -279,30 +274,11 @@ public:
       connect(&m_mach, &QStateMachine::runningChanged, this, &Device::runningChanged);
       m_mach.setInitialState(&s_init);
 
-#if 0
-      z(&m_mach).device(&m_dev);
-      z("s_init")    .Expect("boot");
-      z("s_booting") .Delay(500);
-      z("s_firmware").Send("boot successful\n");
-      z()            .Expect(":00000001FF");
-      z("s_loaded")  .Send("load successful\n");
-#endif
-
-#if 0
-      QAbstractState * s_booting =  Expect(&s_init,    &m_dev, "boot").n("s_init");
-      QAbstractState * s_firmware = Delay(s_booting, 500).n("s_booting");
-      QAbstractState *  s_loaded =  Send(s_firmware,   &m_dev, "boot successful\n").n("s_firmware");
-                                    Expect(s_firmware, &m_dev, ":00000001FF").setDst(s_loaded);
-                                    Send(s_loaded,     &m_dev, "load successful\n");
-
-#else
-
       expect(&s_init, &m_dev, "boot", &s_booting);
       delay (&s_booting, 500, &s_firmware);
       send  (&s_firmware, &m_dev, "boot successful\n");
       expect(&s_firmware, &m_dev, ":00000001FF", &s_loaded);
       send  (&s_loaded,   &m_dev, "load successful\n");
-#endif
    }
    Q_SLOT void start() { m_mach.start(); }
    Q_SLOT void stop() { m_mach.stop(); }
@@ -335,31 +311,11 @@ public:
          });
       connect(&m_mach, &QStateMachine::runningChanged, this, &Programmer::runningChanged);
       m_mach.setInitialState(&s_boot);
-#if 0
-      Stateful s(&m_mach);
-      s.device(&m_device);
-      s("s_failed").failure().final();
-      s("s_boot").Send("boot\n");
-      s          .Expect("boot successful", 1000);
-      s("s_send").Send("HULLOTHERE\n:00000001FF\n");
-      s          .Expect("load successful", 1000);
-      s("s_ok").final();
-      s();
 
-      Stateful s(&m_mach);
-      s * Device(&m_device);
-      s + Final().failure() .s("s_failed");
-      s + Send("boot\n") .("s_boot");
-      s | Expect("boot successful", 1000);
-      s + Send("HULLOTHERE\n:00000001FF\n") .s("s_send");
-      s | Expect("load successful", 1000);
-      s + Final() .s("ok");
-#else
       send  (&s_boot, &m_port, "boot\n");
       expect(&s_boot, &m_port, "boot successful", &s_send, 1000, &s_failed);
       send  (&s_send, &m_port, ":HULLOTHERE\n:00000001FF\n");
       expect(&s_send, &m_port, "load successful", &s_ok, 1000, &s_failed);
-#endif
    }
    Q_SLOT void start() { m_mach.start(); }
    Q_SIGNAL void runningChanged(bool);

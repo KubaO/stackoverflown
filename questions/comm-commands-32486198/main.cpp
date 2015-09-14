@@ -52,6 +52,8 @@ public:
    Q_SIGNAL void hasIncoming(const QByteArray &);
 };
 
+//
+
 template <typename F>
 class GuardedSignalTransition : public QSignalTransition {
    F m_fun;
@@ -110,15 +112,12 @@ void expect(QState * src, QIODevice * dev, const QByteArray & data, QAbstractSta
 
 class Stateful;
 
-class Op {
+struct OpBase {
    friend class Stateful;
+   virtual void make(Stateful & s) = 0;
+   virtual ~OpBase() {}
 protected:
-   QString m_name;
    bool m_isNew { false };
-   virtual QAbstractState * make(Stateful & s);
-public:
-   Op & s(const char * name) { m_name = name; return *this; }
-   virtual ~Op() {}
 };
 
 struct Param {
@@ -128,7 +127,7 @@ struct Param {
 };
 
 class Stateful {
-   friend class Op;
+   friend struct OpBase;
    QMap<int, QSharedPointer<Param>> m_params;
    struct Level {
       QAbstractState *cur { nullptr }, *next { nullptr }, *failure { nullptr };
@@ -136,7 +135,7 @@ class Stateful {
       Level() {}
    };
    QStack<Level> m_levels;
-   QStack<QSharedPointer<Op>> m_ops;
+   QStack<QSharedPointer<OpBase>> m_ops;
    Level & top() { return m_levels.top(); }
    const Level & top() const { return m_levels.top(); }
 public:
@@ -169,8 +168,13 @@ public:
       m_ops.push(QSharedPointer<O>::create(op));
       return *this;
    }
-   QAbstractState * state() const {
+   QAbstractState * aState() {
       return top().cur ? top().cur : (top().cur = new QState);
+   }
+   QState * state() {
+      auto s = qobject_cast<QState*>(aState());
+      if (!s) qFatal("Stateful: Source state must be a QState.");
+      return s;
    }
    QAbstractState * next() const { return top().next; }
    QAbstractState * failure() const { return top().failure; }
@@ -179,23 +183,37 @@ public:
    }
    void flush() {
       while (! m_ops.isEmpty()) {
+         //qDebug() << "ops has" << m_ops.count();
          auto it = m_ops.end() - 1;
          int n = 0;
-         while (! (*it)->m_isNew) { --it; n++; }
+         while (! (*it)->m_isNew && it != m_ops.begin()) { --it; n++; }
          top().cur = nullptr;
-         auto successor = (*it)->make(*this);
-         while (n--) m_ops.pop()->make(*this);
+         (*it)->make(*this);
+         auto successor = top().cur;
+         qDebug() << "flush,successor" << successor << n;
+         while (n--) {
+            auto op = m_ops.pop();
+            op->make(*this);
+            qDebug() << "flush" << top().cur;
+         }
          m_ops.pop();
-         Q_ASSERT(successor == state());
-         top().next = state();
+         //qDebug() << "ops has at end" << m_ops.count();
+         Q_ASSERT(successor == aState());
+         top().next = top().cur;
       }
    }
 };
 
-QAbstractState * Op::make(Stateful & s){
-   if (!m_name.isEmpty()) s.state()->setObjectName(m_name);
-   return s.state();
-}
+template <class D> class Op : public OpBase {
+   friend class Stateful;
+protected:
+   QString m_name;
+   void make(Stateful & s) Q_DECL_OVERRIDE {
+      if (!m_name.isEmpty()) s.aState()->setObjectName(m_name);
+   }
+public:
+   D & s(const char * name) { m_name = name; return static_cast<D&>(*this); }
+};
 
 //
 
@@ -205,34 +223,89 @@ struct ADevice : Param {
    explicit ADevice(QIODevice * device) : Param(id()), device(device) {}
 };
 
-class Final : public Op {
+class Final : public Op<Final> {
    bool m_isFailure { false };
 protected:
-   QAbstractState * make(Stateful & s) Q_DECL_OVERRIDE {
+   void make(Stateful & s) Q_DECL_OVERRIDE {
       Q_ASSERT(m_isNew);
       s.newState<QFinalState>();
-      return Op::make(s);
+      Op::make(s);
    }
 public:
    Final & failure() { m_isFailure = true; return *this; }
 };
 
-class Send : public Op {
+class Send : public Op<Send> {
+   QPointer<QIODevice*> m_dev;
    QByteArray m_data;
 protected:
-   QAbstractState * make(Stateful &s) Q_DECL_OVERRIDE {
+   void make(Stateful &s) Q_DECL_OVERRIDE {
       Op::make(s);
       auto p = s.param<ADevice>();
       Q_ASSERT(p);
       auto dev = p->device;
       auto data = m_data;
+      qDebug() << "Send" << s.state() << dev << data;
+      QObject::connect(dev, &QObject::destroyed, []{
+         qDebug() << "DEVICE destroyed!";
+      });
       QObject::connect(s.state(), &QState::entered, dev, [dev, data]{
+         qDebug() << "Send:Entered";
          dev->write(data);
       });
-      return s.state();
    }
 public:
    Send(const QByteArray & data) : m_data(data) {}
+};
+
+class Delay : public Op<Delay> {
+   int m_delay;
+   QAbstractState * m_dst { nullptr };
+protected:
+   void make(Stateful &s) Q_DECL_OVERRIDE {
+      Op::make(s);
+      if (!m_dst) m_dst = s.next();
+      if (!m_dst) qFatal("Delay: No destination state");
+      auto timer = new QTimer(s.state());
+      timer->setSingleShot(true);
+      timer->setInterval(m_delay);
+      QObject::connect(s.state(), &QState::entered, timer, static_cast<void (QTimer::*)()>(&QTimer::start));
+      QObject::connect(s.state(), &QState::exited,  timer, &QTimer::stop);
+      s.state()->addTransition(timer, SIGNAL(timeout()), m_dst);
+   }
+public:
+   Delay(int delay, QAbstractState * dst = nullptr) : m_delay(delay), m_dst(dst) {}
+};
+
+class Expect : public Op<Expect> {
+   QByteArray m_data;
+   QAbstractState * m_dst { nullptr };
+   int m_timeout;
+   QAbstractState * m_timeoutDst { nullptr };
+protected:
+   void make(Stateful &s) Q_DECL_OVERRIDE {
+      Op::make(s);
+      auto p = s.param<ADevice>();
+      Q_ASSERT(p);
+      auto dev = p->device;
+      auto data = m_data;
+      if (!m_dst) m_dst = s.next();
+      if (!m_dst) qFatal("Expect: No destination state");
+      addTransition(s.state(), m_dst, dev, SIGNAL(readyRead()), [dev, data]{
+         return hasLine(dev, data);
+      });
+      if (! m_timeout) return;
+      if (!m_timeoutDst) m_timeoutDst = s.failure();
+      if (!m_timeoutDst)
+         qWarning() << "Expect: Timeout is ignored, unknown destination state";
+      else
+         s | Delay(m_timeout, m_timeoutDst);
+   }
+public:
+   Expect(const QByteArray & data, int timeout = 0, QAbstractState * timeoutDst = nullptr) :
+      m_data(data), m_timeout(timeout), m_timeoutDst(timeoutDst) {}
+   Expect(const QByteArray & data, QAbstractState * dst, int timeout = 0, QAbstractState * timeoutDst = nullptr) :
+      m_data(data), m_dst(dst), m_timeout(timeout), m_timeoutDst(timeoutDst) {}
 };
 
 void test() {
@@ -242,15 +315,13 @@ void test() {
    s * ADevice(&m_device);
    s + Final().failure() .s("s_failed");
    s + Send("boot\n") .s("s_boot");
-#if 0
    s | Expect("boot successful", 1000);
-#endif
    s + Send("HULLOTHERE\n:00000001FF\n") .s("s_send");
-#if 0
    s | Expect("load successful", 1000);
-#endif
    s + Final() .s("s_ok");
 }
+
+//
 
 class Device : public QObject {
    Q_OBJECT
@@ -310,12 +381,27 @@ public:
             emit stateChanged(state->objectName());
          });
       connect(&m_mach, &QStateMachine::runningChanged, this, &Programmer::runningChanged);
+
+#if 0
       m_mach.setInitialState(&s_boot);
 
       send  (&s_boot, &m_port, "boot\n");
       expect(&s_boot, &m_port, "boot successful", &s_send, 1000, &s_failed);
       send  (&s_send, &m_port, ":HULLOTHERE\n:00000001FF\n");
       expect(&s_send, &m_port, "load successful", &s_ok, 1000, &s_failed);
+#else
+      Stateful s{&m_mach};
+      s * ADevice(&m_port);
+      s + Send("boot\n") .s("s_boot");
+      s | Expect("boot successful", 1000);
+      s + Send("HULLOTHERE\n:00000001FF\n") .s("s_send");
+      s | Expect("load successful", 1000);
+      s + Final() .s("s_ok");
+      s + Final().failure() .s("s_failed");
+      s.flush();
+      auto initial = m_mach.findChild<QState*>("s_boot");
+      m_mach.setInitialState(initial);
+#endif
    }
    Q_SLOT void start() { m_mach.start(); }
    Q_SIGNAL void runningChanged(bool);

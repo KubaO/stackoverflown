@@ -1,9 +1,10 @@
+// https://github.com/KubaO/stackoverflown/tree/master/questions/layout-iterator-adapter-31546511
 #include <QLayout>
 #include <QDebug>
 #include <QPointer>
 #include <utility>
 
-template<class WT> class IterableLayoutAdapter;
+template<class> class IterableLayoutAdapter;
 
 template<typename WT>
 class LayoutIterator {
@@ -57,10 +58,19 @@ template <class WT = QWidget>
 class IterableLayoutAdapter {
    QPointer<QLayout> m_layout;
 public:
-   typedef LayoutIterator<WT> const_iterator;
+   typedef LayoutIterator<WT> iterator;
+   typedef iterator const_iterator;
    IterableLayoutAdapter(QLayout * layout) : m_layout(layout) {}
    const_iterator begin() const { return const_iterator(m_layout, 1); }
    const_iterator end() const { return const_iterator(m_layout, -1); }
+   const_iterator cbegin() const { return const_iterator(m_layout, 1); }
+   const_iterator cend() const { return const_iterator(m_layout, -1); }
+};
+
+template <class WT = QWidget>
+class ConstIterableLayoutAdapter : public IterableLayoutAdapter<const WT> {
+public:
+   ConstIterableLayoutAdapter(QLayout * layout) : IterableLayoutAdapter<const WT>(layout) {}
 };
 
 #include <QApplication>
@@ -107,11 +117,11 @@ int main(int argc, char ** argv) {
    l.addWidget(&b2);
    l.addWidget(&b3);
 
-   // Iterate all widget types
+   // Iterate all widget types as constants
    qDebug() << "all, range-for";
-   for (auto widget : IterableLayoutAdapter<>(&l)) qDebug() << widget;
+   for (auto widget : ConstIterableLayoutAdapter<>(&l)) qDebug() << widget;
    qDebug() << "all, Q_FOREACH";
-   Q_FOREACH (QWidget * widget, IterableLayoutAdapter<>(&l)) qDebug() << widget;
+   Q_FOREACH (const QWidget * widget, ConstIterableLayoutAdapter<>(&l)) qDebug() << widget;
 
    // Iterate labels only
    qDebug() << "labels, range-for";

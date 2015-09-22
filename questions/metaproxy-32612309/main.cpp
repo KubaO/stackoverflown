@@ -61,6 +61,27 @@ QT_MOC_LITERAL(0, 0, 13), // "PropertyProxy"
 };
 #undef QT_MOC_LITERAL
 
+class ByteArrayData {
+    QByteArrayData data;
+public:
+    ByteArrayData() {}
+    ByteArrayData(const QByteArray & other) :
+        data { Q_REFCOUNT_INITIALIZE_STATIC, other.size(), 0, 0, other.constData() - reinterpret_cast<char*>(this) }
+    {}
+    ByteArrayData(const ByteArrayData & other) {
+        *this = other;
+    }
+    ByteArrayData & operator=(const ByteArrayData & other) {
+        memcpy(&data, &other.data, sizeof(data));
+        data.offset -= (reinterpret_cast<char*>(&data)-reinterpret_cast<const char*>(&other.data));
+        return *this;
+    }
+    QByteArrayDataPtr ptr() {
+        QByteArrayDataPtr p { &data };
+        return p;
+    }
+};
+
 class PropertyProxy : public QObject {
 #if 0
 public: \
@@ -74,8 +95,20 @@ private: \
     Q_DECL_HIDDEN_STATIC_METACALL static void qt_static_metacall(QObject *, QMetaObject::Call, int, void **); \
     struct QPrivateSignal {};
 #endif
-    QObject * m_target;
+    QObject * m_target { nullptr };
     QMetaObject m_metaProxy;
+    QVector<ByteArrayData> m_stringData;
+    QList<QByteArray> m_strings; // do not modify the arrays stored here!
+
+    int addString(const QByteArray & str) {
+        auto it = std::find(m_strings.cbegin(), m_strings.cend(), str);
+        if (it != m_strings.cend())
+            return it - m_strings.cbegin();
+        m_strings.append(str);
+        m_strings.last().detach();
+        m_stringData.append(ByteArrayData(m_strings.last()));
+        return m_strings.size() - 1;
+    }
 
     struct CacheEntry {
         int typeId;
@@ -110,8 +143,8 @@ private:
         if (target->thread() == thread()) {
             read();
         } else {
-            QObject signaler;
-            connect(&signaler, &QObject::destroyed, target, read, Qt::BlockingQueuedConnection);
+            QObject sig;
+            connect(&sig, &QObject::destroyed, target, read, Qt::BlockingQueuedConnection);
         }
     }
     /// Add a dynamic slot that invokes a given functor
@@ -121,7 +154,13 @@ private:
     }
 public:
     Q_OBJECT_CHECK
-    PropertyProxy(QObject * target, QObject * parent = 0) : m_target(target) {
+    PropertyProxy(QObject * parent = 0) : QObject(parent) {
+        qDebug() << addString("abcd");
+        qDebug() << "d_array" << hex << (void*)m_stringData.data();
+        qDebug() << "d_array data" << hex << (void*)m_stringData[0].ptr().ptr->data();
+        qDebug() << "d_ptr data" << hex << (void*)m_strings[0].constData();
+    }
+    PropertyProxy(QObject * target, QObject * parent = 0) : QObject(parent), m_target(target) {
         auto mobj = target->metaObject();
         m_cache.resize(mobj->propertyCount());
         for (int i = 0; i < m_cache.size(); ++i) {
@@ -182,7 +221,7 @@ QMetaObject PropertyProxy::staticMetaObject = {
 
 int main(int argc, char ** argv) {
     QCoreApplication app{argc, argv};
-    return app.exec();
+    PropertyProxy p;
 }
 
 //

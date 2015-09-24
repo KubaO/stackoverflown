@@ -32,11 +32,18 @@ public:
 struct CacheEntry {
     int typeId { 0 };
     void * value { nullptr };
+    int slotIndex { -1 };
     void setValue(void * src) {
         Q_ASSERT(value);
         qDebug() << "setting value" << QMetaType::typeName(typeId) << "@" << value;
         QMetaType::destruct(typeId, value);
         QMetaType::construct(typeId, value, src);
+    }
+    void getValue(void * dst) const {
+        Q_ASSERT(value);
+        qDebug() << "getting value" << QMetaType::typeName(typeId) << "@" << value;
+        QMetaType::destruct(typeId, dst);
+        QMetaType::construct(typeId, dst, value);
     }
     ~CacheEntry() {
         if (value) QMetaType::destroy(typeId, value);
@@ -70,7 +77,7 @@ class PropertyProxy : public QObject {
     int methodCount() const {
         return m_target->metaObject()->methodCount() + m_slots.size();
     }
-    void readProperty(void * dst, int id) {
+    void readProperty(void * dst, int id, bool warn = false) {
         void * args[1] = { dst };
         QObject * target = m_target;
         auto read = [&args, id, target]{
@@ -79,10 +86,44 @@ class PropertyProxy : public QObject {
         if (target->thread() == QThread::currentThread()) {
             read();
         } else {
+            if (warn) qWarning() << "blocking to read the property";
             QObject sig;
             connect(&sig, &QObject::destroyed, target, read, Qt::BlockingQueuedConnection);
         }
     }
+    void writeProperty(void * src, int id) {
+        QObject * target = m_target;
+        if (target->thread() == QThread::currentThread()) {
+            void * args[1] = { src };
+            target->qt_metacall(QMetaObject::WriteProperty, id, args);
+        } else {
+            struct Data {
+                int typeId;
+                void * args[1] = { buf() };
+                void * m_buf;
+                void * buf() { return reinterpret_cast<void*>(&m_buf); }
+                Data(int typeId, void * src) : typeId(typeId) {
+                    QMetaType::construct(typeId, buf(), src);
+                }
+                ~Data() { QMetaType::destruct(typeId, buf()); }
+                static Data * make(int typeId, void * src) {
+                    Data * d = reinterpret_cast<Data*>(malloc(sizeof(Data) + QMetaType::sizeOf(typeId)));
+                    return new (d) Data(typeId, src);
+                }
+                static void free(Data * d) {
+                    d->~Data();
+                    ::free(d);
+                }
+            };
+            auto typeId = m_cache.at(id).typeId;
+            QSharedPointer<Data> d(Data::make(typeId, src), Data::free);
+            QObject sig;
+            connect(&sig, &QObject::destroyed, target, [d, id, target]{
+                target->qt_metacall(QMetaObject::WriteProperty, id, d->args);
+            });
+        }
+    }
+
 public:
     Q_OBJECT_CHECK
     const QMetaObject *metaObject() const Q_DECL_OVERRIDE {
@@ -96,6 +137,29 @@ public:
             if (_id < methodCount())
                 qt_static_metacall(this, _c, _id, _a);
             _id -= methodCount();
+            return _id;
+        }
+        else if (_c == QMetaObject::ReadProperty) {
+            if (_id < m_o->propertyCount()) {
+                auto prop = m_o->property(_id);
+                if (prop.isReadable()) {
+                    if (prop.hasNotifySignal()) {
+                        m_cache.at(_id).getValue(_a[0]);
+                    } else {
+                        readProperty(_a[0], _id, true);
+                    }
+                }
+            }
+            _id -= m_o->propertyCount();
+            return _id;
+        }
+        else if (_c == QMetaObject::WriteProperty) {
+            if (_id < m_o->propertyCount()) {
+                auto prop = m_o->property(_id);
+                if (prop.isWritable())
+                    writeProperty(_a[0], _id);
+            }
+            _id -= m_o->propertyCount();
             return _id;
         }
         return m_target->qt_metacall(_c, _id, _a);
@@ -126,12 +190,11 @@ public:
         b.setStaticMetacallFunction(qt_static_metacall);
         addMetaObjects(b, tmobj);
         int n = 0;
+        m_cache.resize(tmobj->propertyCount());
         for (int i = 0; i < tmobj->propertyCount(); ++i) {
             auto prop = tmobj->property(i);
             if (prop.isReadable() && prop.hasNotifySignal()) {
-                m_cache.push_back(CacheEntry());
-                m_slots.push_back(Slot());
-                auto & entry = m_cache.last();
+                auto & entry = m_cache[i];
                 entry.typeId = prop.userType();
                 entry.value = QMetaType(prop.userType()).create();
                 if (!entry.value) {
@@ -139,9 +202,10 @@ public:
                                << "of type" << QMetaType::typeName(prop.userType()) << "(" << prop.userType() << ")";
                 }
                 readProperty(entry.value, i);
-                m_slots.last() = [this, n, prop](void ** args){
-                    qDebug() << "notify slot" << n << "for" << prop.name();
-                    m_cache[n].setValue(args[1]);
+                m_slots.push_back(Slot());
+                m_slots.last() = [this, n, i, prop](void ** args){
+                    qDebug() << "notify slot" << n << "for" << prop.name() << "index" << i;
+                    m_cache[i].setValue(args[1]);
                 };
                 // create a slot that will be notified of the change of property value
                 QByteArray s("void __pnslot__");
@@ -151,6 +215,7 @@ public:
                 s.append(")");
                 QMetaMethodBuilder m = b.addSlot(s);
                 int index = m.index() + QObject::metaObject()->methodCount();
+                entry.slotIndex = index;
                 qDebug() << "adding notification slot" << s << "at index" << index;
                 QMetaObject::connect(target, prop.notifySignalIndex(), this, index);
                 n++;
@@ -169,7 +234,9 @@ int main(int argc, char ** argv) {
     ObjectB b;
     PropertyProxy p(&b);
     b.setObjectName("yay");
-
+    Q_ASSERT(b.objectName() == "yay");
+    p.setProperty("objectName", "foo");
+    Q_ASSERT(b.objectName() == "foo");
 }
 
 #include "main.moc"

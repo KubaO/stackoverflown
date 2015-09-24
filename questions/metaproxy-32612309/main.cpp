@@ -29,63 +29,102 @@ public:
     Q_SLOT void setC(const QStringList & c) { m_c = c; emit cChanged(c); }
 };
 
-template <typename T> class CPointer {
-    Q_DISABLE_COPY(CPointer)
-    T * ptr { nullptr };
-public:
-    CPointer() = default;
-    CPointer(T* p) : ptr(p) {}
-    ~CPointer() { free(ptr); }
-    CPointer & operator=(T* p) {
-        free(ptr);
-        ptr = p;
+struct CacheEntry {
+    int typeId { 0 };
+    void * value { nullptr };
+    void setValue(void * src) {
+        Q_ASSERT(value);
+        qDebug() << "setting value" << QMetaType::typeName(typeId) << "@" << value;
+        QMetaType::destruct(typeId, value);
+        QMetaType::construct(typeId, value, src);
     }
-    operator T*() const { return ptr; }
+    ~CacheEntry() {
+        if (value) QMetaType::destroy(typeId, value);
+    }
 };
+Q_DECLARE_TYPEINFO(CacheEntry, Q_MOVABLE_TYPE);
+
+void dumpMethods(const QMetaObject * o) {
+    qDebug() << o->className() << "has" << o->methodCount() << "methods";
+    for (int i = 0; i < o->methodCount(); ++i) {
+        qDebug() << "method" << i << o->method(i).name();
+    }
+}
+
+/// Add all metaobjects in order from most base to most derived class,
+/// with exception of QObject itself
+void addMetaObjects(QMetaObjectBuilder & b, const QMetaObject * derived) {
+    using Q = QMetaObjectBuilder;
+    if (!derived->superClass()) return;
+    addMetaObjects(b, derived->superClass());
+    b.addMetaObject(derived, Q::AddMembers(Q::AllMembers) & ~Q::AddMembers(Q::SuperClass | Q::StaticMetacall));
+}
 
 class PropertyProxy : public QObject {
-    CPointer<QMetaObject> m_o;
+    QScopedPointer<QMetaObject, QScopedPointerPodDeleter> m_o;
     QPointer<QObject> m_target;
-    struct CacheEntry {
-        int typeId;
-        void * value { nullptr };
-        void setValue(void * src) {
-            Q_ASSERT(value);
-            QMetaType::destruct(typeId, value);
-            QMetaType::construct(typeId, value, src);
-        }
-        ~CacheEntry() {
-            if (value) QMetaType::destroy(typeId, value);
-        }
-    };
     QVector<CacheEntry> m_cache; // cache of property values
     typedef std::function<void(void**)> Slot;
     QVector<Slot> m_slots;
 
-    static void readProperty(void * dst, QObject * target, int id) {
+    int methodCount() const {
+        return m_target->metaObject()->methodCount() + m_slots.size();
+    }
+    void readProperty(void * dst, int id) {
         void * args[1] = { dst };
+        QObject * target = m_target;
         auto read = [&args, id, target]{
             target->qt_metacall(QMetaObject::ReadProperty, id, args);
         };
-        if (target->thread() == thread()) {
+        if (target->thread() == QThread::currentThread()) {
             read();
         } else {
             QObject sig;
             connect(&sig, &QObject::destroyed, target, read, Qt::BlockingQueuedConnection);
         }
     }
-
 public:
     Q_OBJECT_CHECK
     const QMetaObject *metaObject() const Q_DECL_OVERRIDE {
-        return m_o;
+        return m_o.data();
     }
-    int qt_metacall(QMetaObject::Call, int, void **) Q_DECL_OVERRIDE {
+    int qt_metacall(QMetaObject::Call _c, int _id, void **_a) Q_DECL_OVERRIDE {
+        qDebug() << __FUNCTION__ << _c << _id << _a;
+        if (_c == QMetaObject::InvokeMetaMethod) {
+            _id = m_target->QObject::qt_metacall(_c, _id, _a);
+            if (_id < 0) return _id;
+            if (_id < methodCount())
+                qt_static_metacall(this, _c, _id, _a);
+            _id -= methodCount();
+            return _id;
+        }
+        return m_target->qt_metacall(_c, _id, _a);
     }
+    static void qt_static_metacall(QObject *_o, QMetaObject::Call c, int id, void **a) {
+        qDebug() << __FUNCTION__ << c << id << a;
+        if (c != QMetaObject::InvokeMetaMethod) return;
+        auto o = static_cast<PropertyProxy*>(_o);
+        int targetMethodCount = o->m_target->metaObject()->methodCount() - QObject::staticMetaObject.methodCount();
+        if (id < targetMethodCount) {
+            id += QObject::staticMetaObject.methodCount();
+            o->m_target->qt_metacall(c, id, a);
+            return;
+        }
+        id -= targetMethodCount;
+        Q_ASSERT(id >= 0 && id < o->m_slots.count());
+        qDebug() << "calling slot" << id;
+        o->m_slots.at(id)(a);
+    }
+
     PropertyProxy(QObject * target, QObject * parent = 0) : QObject(parent), m_target(target) {
         typedef QMetaObjectBuilder Q;
         auto tmobj = target->metaObject();
-        QMetaObjectBuilder b(tmobj, Q::AddMembers(Q::AllMembers) & ~Q::AddMembers(Q::SuperClass | Q::StaticMetacall));
+        qDebug() << "target has" << tmobj->methodCount() << "methods";
+        dumpMethods(tmobj);
+        QMetaObjectBuilder b;
+        b.setSuperClass(&QObject::staticMetaObject);
+        b.setStaticMetacallFunction(qt_static_metacall);
+        addMetaObjects(b, tmobj);
         int n = 0;
         for (int i = 0; i < tmobj->propertyCount(); ++i) {
             auto prop = tmobj->property(i);
@@ -99,518 +138,38 @@ public:
                     qWarning() << "PropertyProxy: cannot create an instance of the value of property" << prop.name()
                                << "of type" << QMetaType::typeName(prop.userType()) << "(" << prop.userType() << ")";
                 }
-                readProperty(entry.value, target, i);
-                m_slots.last() = [this, n](void ** args){ m_cache[n].setValue(args[1]); };
+                readProperty(entry.value, i);
+                m_slots.last() = [this, n, prop](void ** args){
+                    qDebug() << "notify slot" << n << "for" << prop.name();
+                    m_cache[n].setValue(args[1]);
+                };
                 // create a slot that will be notified of the change of property value
                 QByteArray s("void __pnslot__");
                 s.append(prop.name());
                 s.append("(");
                 s.append(prop.typeName());
                 s.append(")");
-                qDebug() << "adding notification slot" << s;
                 QMetaMethodBuilder m = b.addSlot(s);
-                QMetaObject::connect(target, prop.notifySignalIndex(), this, m.index());
+                int index = m.index() + QObject::metaObject()->methodCount();
+                qDebug() << "adding notification slot" << s << "at index" << index;
+                QMetaObject::connect(target, prop.notifySignalIndex(), this, index);
+                n++;
             }
             else if (prop.isReadable()) {
                 qWarning() << "PropertyProxy: skipping non-notifying property" << prop.name() << "of" << target;
             }
         }
+        m_o.reset(b.toMetaObject());
+        dumpMethods(m_o.data());
     }
 };
 
 int main(int argc, char ** argv) {
     QCoreApplication app{argc, argv};
-    ObjectA a;
-    PropertyProxy p(&a);
+    ObjectB b;
+    PropertyProxy p(&b);
+    b.setObjectName("yay");
+
 }
-
-#if 0
-struct MetaEntry {
-    uint count;
-    uint offset;
-};
-
-struct MetaData {
-    enum {
-        Revision = 0,
-        ClassName,
-        ClassInfoCount, ClassInfoOffset,
-        MethodsCount, MethodsOffset,
-        PropertiesCount, PropertiesOffset,
-        EnumsSetsCount, EnumsSetsOffset,
-        ConstructorsCount, ConstructorsOffset,
-        Flags,
-        SignalCount,
-        HeaderSize,
-        MethodName = 0,
-        MethodArgc,
-        MethodParamOffset,
-        MethodTag,
-        MethodFlags,
-        MethodSize,
-        ParamRetType = 0,
-        ParamType,
-        ParamName,
-        ParamSize,
-        PropName = 0,
-        PropType,
-        PropFlags,
-        PropSize
-    };
-    QVector<uint> data { HeaderSize + 1, 0 }; // zero-terminated header
-    uint paramCount { 0 };
-    MetaData() {
-        data[Revision] = 7;
-    }
-    uint classInfoIndex(uint) const { return HeaderSize; }
-    uint methodIndex(uint i) const { return data[MethodsCount] ? data[MethodOffset] + i*MethodSize :
-                                                                classInfoIndex(data[ClassInfoCount]); }
-    uint paramIndex(uint i) const { return methodIndex(data[MethodCount]) + i*ParamSize; }
-    uint propIndex(uint i) const { return data[PropertiesCount] ? data[PropertiesOffset] + i*PropSize :
-                                                                  paramIndex(paramCount); }
-    uint addSignal(uint name, uint argc, uint paramType, uint paramName, uint tag = 2, uint flags = 0x06) {
-        uint mi = methodIndex(0);
-        data.insert(mi, MethodSize, 0);
-        data[MethodsCount] ++;
-        data[mi+0] = name;
-        data[mi+1] = argc;
-        uint pi = paramIndex(paramCount);
-        data[mi+2] = pi;
-        data[mi+3] = 2; /* tag */
-        data[mi+4] = 0x06; /* flags */
-        data.insert(pi, ParamSize, 0);
-        paramCount ++;
-        data[pi+0] = QMetaType::Void;
-        data[pi+1] = paramType;
-        data[pi+2] = paramName;
-        data[SignalCount] ++;
-        return mi;
-    }
-    void addProperty(uint name, uint type, uint flags, uint notifySignalId) {
-        uint pi = propIndex(data[PropertiesCount]);
-        data.insert(pi, PropSize);
-        data[PropertiesCount] ++;
-        data[pi+0] = name;
-        data[pi+1] = type;
-        data[pi+2] = 0x00495003; /* flags ?? */
-        return pi;
-    }
-};
-#endif
-
-#if 0
-static const uint qt_meta_data_Object[] = {
-
- // content:
-       7,       // revision  0
-       0,       // classname 1
-       0,    0, // classinfo  count offset 2
-       2,   14, // methods    count offset 4
-       2,   30, // properties count offset 6
-       0,    0, // enums/sets 8
-       0,    0, // constructors 10
-       0,       // flags  12
-       2,       // signalCount 13
-
- // signals: name, argc, parameters offset, tag, flags
-       1,    1,   24,    2, 0x06 /* Public 14 */,
-       4,    1,   27,    2, 0x06 /* Public 19 */,
-
- // signals: parameters
-    QMetaType::Void, QMetaType::Int,    3,      // 24
-    QMetaType::Void, QMetaType::QString,    5,  // 27
-
- // properties: name, type, flags
-       3, QMetaType::Int, 0x00495003,          // 30
-       5, QMetaType::QString, 0x00495103,      // 33
-
- // properties: notify_signal_id
-       0,       // 34
-       1,       // 35
-
-       0        // eod
-};
-#endif
-
-#if 0
-static const uint qt_meta_data_PropertyProxy[] = {
-
- // content:
-       7,       // revision
-       0,       // classname
-       0,    0, // classinfo
-       0,    0, // methods
-       0,    0, // properties
-       0,    0, // enums/sets
-       0,    0, // constructors
-       0,       // flags
-       0,       // signalCount
-
-       0        // eod
-};
-
-struct qt_meta_stringdata_PropertyProxy_t {
-    QByteArrayData data[1];
-    char stringdata[14];
-};
-#define QT_MOC_LITERAL(idx, ofs, len) \
-    Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
-    qptrdiff(offsetof(qt_meta_stringdata_PropertyProxy_t, stringdata) + ofs \
-        - idx * sizeof(QByteArrayData)) \
-    )
-static const qt_meta_stringdata_PropertyProxy_t qt_meta_stringdata_PropertyProxy = {
-    {
-QT_MOC_LITERAL(0, 0, 13), // "PropertyProxy"
-    },
-    "PropertyProxy"
-};
-#undef QT_MOC_LITERAL
-
-struct ByteArrayData {
-    QByteArrayData data;
-public:
-    ByteArrayData() {}
-    ByteArrayData(const QByteArray & other) :
-        data { Q_REFCOUNT_INITIALIZE_STATIC, other.size(), 0, 0, other.constData() - reinterpret_cast<char*>(this) }
-    {}
-    ByteArrayData(const ByteArrayData & other) {
-        *this = other;
-    }
-    ByteArrayData & operator=(const ByteArrayData & other) {
-        memcpy(&data, &other.data, sizeof(data));
-        data.offset -= (reinterpret_cast<char*>(&data)-reinterpret_cast<const char*>(&other.data));
-        return *this;
-    }
-    QByteArrayDataPtr ptr() {
-        QByteArrayDataPtr p { &data };
-        return p;
-    }
-};
-
-static_assert(sizeof(ByteArrayData) == sizeof(QByteArrayData), "ByteArrayData is not same size as QByteArrayData");
-
-class PropertyProxy : public QObject {
-#if 0
-public: \
-    Q_OBJECT_CHECK \
-    static const QMetaObject staticMetaObject; \
-    virtual const QMetaObject *metaObject() const; \
-    virtual void *qt_metacast(const char *); \
-    QT_TR_FUNCTIONS \
-    virtual int qt_metacall(QMetaObject::Call, int, void **); \
-private: \
-    Q_DECL_HIDDEN_STATIC_METACALL static void qt_static_metacall(QObject *, QMetaObject::Call, int, void **); \
-    struct QPrivateSignal {};
-#endif
-private:
-    QObject * m_target { nullptr };
-    QMetaObject m_metaProxy;
-    QVector<ByteArrayData> m_stringData;
-    QList<QByteArray> m_strings; // do not modify the arrays stored here!
-public:
-    QMetaObject staticMetaObject = {
-        { &QObject::staticMetaObject, &m_stringData.constData()->data,
-          Q_NULLPTR, qt_static_metacall, Q_NULLPTR, Q_NULLPTR }
-    };
-private:
-
-    int addString(const QByteArray & str) {
-        auto it = std::find(m_strings.cbegin(), m_strings.cend(), str);
-        if (it != m_strings.cend())
-            return it - m_strings.cbegin();
-        m_strings.append(str);
-        m_strings.last().detach();
-        auto prevData = m_stringData.constData();
-        m_stringData.append(ByteArrayData(m_strings.last()));
-        if (prevData != m_stringData.constData())
-            staticMetaObject.d.stringdata = &m_stringData.constData()->data;
-        return m_strings.size() - 1;
-    }
-
-
-
-    struct Slot {
-        int notifySignalIndex;
-        std::function<void(void**)> fun;
-    };
-    QVector<Slot> m_slots;
-
-private:
-    Q_DECL_HIDDEN_STATIC_METACALL static void qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
-    {
-        Q_UNUSED(_o);
-        Q_UNUSED(_id);
-        Q_UNUSED(_c);
-        Q_UNUSED(_a);
-    }
-    void readProperty(void * dst, QObject * target, int id) {
-        void * args[1] = { dst };
-        auto read = [&args, id, target]{
-            target->qt_metacall(QMetaObject::ReadProperty, id, args);
-        };
-        if (target->thread() == thread()) {
-            read();
-        } else {
-            QObject sig;
-            connect(&sig, &QObject::destroyed, target, read, Qt::BlockingQueuedConnection);
-        }
-    }
-    /// Add a dynamic slot that invokes a given functor
-    int addSlot(std::function<void(void**)> && fun) {
-        m_slots.push_back(std::move(fun));
-        return QObject::staticMetaObject.methodCount() + m_slots.count() - 1;
-    }
-public:
-    Q_OBJECT_CHECK
-    PropertyProxy(QObject * parent = 0) : QObject(parent) {
-        qDebug() << addString("abcd");
-        qDebug() << "d_array" << hex << (void*)m_stringData.data();
-        qDebug() << "d_array data" << hex << (void*)m_stringData[0].ptr().ptr->data();
-        qDebug() << "d_ptr data" << hex << (void*)m_strings[0].constData();
-    }
-    PropertyProxy(QObject * target, QObject * parent = 0) : QObject(parent), m_target(target) {
-        auto mobj = target->metaObject();
-        // enumerate readable, notifiable properties
-        int propertyCount = 0;
-        for (int i = 0; i < mobj->propertyCount(); ++i) {
-            auto prop = mobj->property(i);
-            if (prop.isReadable() && prop.hasNotifySignal()) {
-                CacheEntry entry; // cache the property
-                entry.typeId = prop.userType();
-                entry.value = QMetaType(prop.userType()).create();
-                if (!entry.value) {
-                    qWarning() << "PropertyProxy: cannot create an instance of the value of property" << prop.name()
-                               << "of type" << QMetaType::typeName(prop.userType()) << "(" << prop.userType() << ")";
-                }
-                readProperty(entry.value, target, i);
-                m_cache.push_back(entry);
-                m_slots.push_back(Slot());
-                m_slots.last().fun = [this, propertyCount](void ** args){ m_cache[propertyCount].setValue(args[1]); };
-                m_slots.last().notifySignalIndex = prop.notifySignalIndex();
-                propertyCount ++;
-            }
-            else if (prop.isReadable()) {
-                qWarning() << "PropertyProxy: skipping non-notifying property" << prop.name() << "of" << target;
-            }
-        }
-        m_metadata.init()
-
-
-
-
-        m_metaProxy.d.superdata = &QObject::staticMetaObject;
-
-    }
-
-
-
-    const QMetaObject *metaObject() const Q_DECL_OVERRIDE
-    {
-        return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;
-    }
-    void *qt_metacast(const char *_clname) Q_DECL_OVERRIDE
-    {
-        if (!_clname) return Q_NULLPTR;
-        if (!strcmp(_clname, qt_meta_stringdata_PropertyProxy.stringdata))
-            return static_cast<void*>(const_cast< PropertyProxy*>(this));
-        return QObject::qt_metacast(_clname);
-    }
-    int qt_metacall(QMetaObject::Call _c, int _id, void **_a) Q_DECL_OVERRIDE
-    {
-        _id = QObject::qt_metacall(_c, _id, _a);
-        if (_id < 0)
-            return _id;
-
-        return _id;
-    }
-
-
-};
-#endif
-
-#if 0
-QMetaObject PropertyProxy::staticMetaObject = {
-    { &QObject::staticMetaObject, Q_NULLPTR,
-      qt_meta_data_PropertyProxy,  qt_static_metacall, Q_NULLPTR, Q_NULLPTR}
-};
-#endif
-
-//
-
-#if 0
-
-struct qt_meta_stringdata_Object_t {
-    QByteArrayData data[6];
-    char stringdata[30];
-};
-#define QT_MOC_LITERAL(idx, ofs, len) \
-    Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
-    qptrdiff(offsetof(qt_meta_stringdata_Object_t, stringdata) + ofs \
-        - idx * sizeof(QByteArrayData)) \
-    )
-static const qt_meta_stringdata_Object_t qt_meta_stringdata_Object = {
-    {
-QT_MOC_LITERAL(0, 0, 6), // "Object"
-QT_MOC_LITERAL(1, 7, 8), // "aChanged"
-QT_MOC_LITERAL(2, 16, 0), // ""
-QT_MOC_LITERAL(3, 17, 1), // "a"
-QT_MOC_LITERAL(4, 19, 8), // "bChanged"
-QT_MOC_LITERAL(5, 28, 1) // "b"
-
-    },
-    "Object\0aChanged\0\0a\0bChanged\0b"
-};
-#undef QT_MOC_LITERAL
-
-static const uint qt_meta_data_Object[] = {
-
- // content:
-       7,       // revision  0
-       0,       // classname 1
-       0,    0, // classinfo  count offset 2
-       2,   14, // methods    count offset 4
-       2,   30, // properties count offset 6
-       0,    0, // enums/sets 8
-       0,    0, // constructors 10
-       0,       // flags  12
-       2,       // signalCount 13
-
- // signals: name, argc, parameters offset, tag, flags
-       1,    1,   24,    2, 0x06 /* Public 14 */,
-       4,    1,   27,    2, 0x06 /* Public 19 */,
-
- // signals: parameters
-    QMetaType::Void, QMetaType::Int,    3,      // 24
-    QMetaType::Void, QMetaType::QString,    5,  // 27
-
- // properties: name, type, flags
-       3, QMetaType::Int, 0x00495003,          // 30
-       5, QMetaType::QString, 0x00495103,      // 33
-
- // properties: notify_signal_id
-       0,       // 34
-       1,       // 35
-
-       0        // eod
-};
-
-void Object::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
-{
-    if (_c == QMetaObject::InvokeMetaMethod) {
-        Object *_t = static_cast<Object *>(_o);
-        switch (_id) {
-        case 0: _t->aChanged((*reinterpret_cast< int(*)>(_a[1]))); break;
-        case 1: _t->bChanged((*reinterpret_cast< const QString(*)>(_a[1]))); break;
-        default: ;
-        }
-    } else if (_c == QMetaObject::IndexOfMethod) {
-        int *result = reinterpret_cast<int *>(_a[0]);
-        void **func = reinterpret_cast<void **>(_a[1]);
-        {
-            typedef void (Object::*_t)(int );
-            if (*reinterpret_cast<_t *>(func) == static_cast<_t>(&Object::aChanged)) {
-                *result = 0;
-            }
-        }
-        {
-            typedef void (Object::*_t)(const QString & );
-            if (*reinterpret_cast<_t *>(func) == static_cast<_t>(&Object::bChanged)) {
-                *result = 1;
-            }
-        }
-    }
-}
-
-const QMetaObject Object::staticMetaObject = {
-    { &QObject::staticMetaObject, qt_meta_stringdata_Object.data,
-      qt_meta_data_Object,  qt_static_metacall, Q_NULLPTR, Q_NULLPTR}
-};
-
-
-const QMetaObject *Object::metaObject() const
-{
-    return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;
-}
-
-void *Object::qt_metacast(const char *_clname)
-{
-    if (!_clname) return Q_NULLPTR;
-    if (!strcmp(_clname, qt_meta_stringdata_Object.stringdata))
-        return static_cast<void*>(const_cast< Object*>(this));
-    return QObject::qt_metacast(_clname);
-}
-
-int Object::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
-{
-    _id = QObject::qt_metacall(_c, _id, _a);
-    if (_id < 0)
-        return _id;
-    if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 2)
-            qt_static_metacall(this, _c, _id, _a);
-        _id -= 2;
-    } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 2)
-            *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 2;
-    }
-#ifndef QT_NO_PROPERTIES
-      else if (_c == QMetaObject::ReadProperty) {
-        void *_v = _a[0];
-        switch (_id) {
-        case 0: *reinterpret_cast< int*>(_v) = m_a; break;
-        case 1: *reinterpret_cast< QString*>(_v) = b(); break;
-        default: break;
-        }
-        _id -= 2;
-    } else if (_c == QMetaObject::WriteProperty) {
-        void *_v = _a[0];
-        switch (_id) {
-        case 0:
-            if (m_a != *reinterpret_cast< int*>(_v)) {
-                m_a = *reinterpret_cast< int*>(_v);
-                Q_EMIT aChanged(m_a);
-            }
-            break;
-        case 1: setB(*reinterpret_cast< QString*>(_v)); break;
-        default: break;
-        }
-        _id -= 2;
-    } else if (_c == QMetaObject::ResetProperty) {
-        _id -= 2;
-    } else if (_c == QMetaObject::QueryPropertyDesignable) {
-        _id -= 2;
-    } else if (_c == QMetaObject::QueryPropertyScriptable) {
-        _id -= 2;
-    } else if (_c == QMetaObject::QueryPropertyStored) {
-        _id -= 2;
-    } else if (_c == QMetaObject::QueryPropertyEditable) {
-        _id -= 2;
-    } else if (_c == QMetaObject::QueryPropertyUser) {
-        _id -= 2;
-    } else if (_c == QMetaObject::RegisterPropertyMetaType) {
-        if (_id < 2)
-            *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 2;
-    }
-#endif // QT_NO_PROPERTIES
-    return _id;
-}
-
-// SIGNAL 0
-void Object::aChanged(int _t1)
-{
-    void *_a[] = { Q_NULLPTR, const_cast<void*>(reinterpret_cast<const void*>(&_t1)) };
-    QMetaObject::activate(this, &staticMetaObject, 0, _a);
-}
-
-// SIGNAL 1
-void Object::bChanged(const QString & _t1)
-{
-    void *_a[] = { Q_NULLPTR, const_cast<void*>(reinterpret_cast<const void*>(&_t1)) };
-    QMetaObject::activate(this, &staticMetaObject, 1, _a);
-}
-
-#endif
 
 #include "main.moc"

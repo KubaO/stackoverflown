@@ -67,7 +67,76 @@ void addMetaObjects(QMetaObjectBuilder & b, const QMetaObject * derived) {
     b.addMetaObject(derived, Q::AddMembers(Q::AllMembers) & ~Q::AddMembers(Q::SuperClass | Q::StaticMetacall));
 }
 
-class PropertyProxy : public QObject {
+
+// from http://stackoverflow.com/a/24748637/1329652
+int uint32_log2(uint32_t n)
+{
+#define S(k) if (n >= (UINT32_C(1) << k)) { i += k; n >>= k; }
+    int i = -(n == 0); S(16); S(8); S(4); S(2); S(1); return i;
+#undef S
+}
+
+int alignOf(int typeId) {
+    size_t size = QMetaType::sizeOf(typeId);
+    Q_ASSERT(size > 0);
+    if (size > sizeof(void*)) size = sizeof(void*);
+    return 1 << (uint32_log2(size)+1);
+}
+
+int align(int val, int alignment) {
+    auto r = val % alignment;
+    return r ? val + r : val;
+}
+
+int manageMember(int offset, int memberType, void * p = 0, int n = 0, void * copy = 0) {
+    offset = align(offset, alignOf(memberType));
+    if (p) {
+        void * data = reinterpret_cast<char*>(p) + offset;
+        if (copy) {
+            reinterpret_cast<int*>(p)[n+1] = memberType;
+            QMetaType::construct(memberType, data, copy);
+        }
+        else
+            QMetaType::destruct(memberType, data);
+    }
+    return offset + QMetaType::sizeOf(memberType);
+}
+
+class Arguments {
+    int types[1];
+    Arguments(int n) {
+        types[0] = n;
+    }
+    void free() {
+        this->~Arguments();
+        ::free(this);
+    }
+
+public:
+    ~Arguments() {
+        auto count = types[0];
+        int offset = (count+1)*sizeof(int);
+        for (int i = 0; i < count; ++i)
+            offset = manageMember(offset, types[i+1], this, i);
+    }
+    static QSharedPointer<Arguments> make(const QMetaMethod & method, void ** args) {
+        int N = method.parameterCount();
+        auto iterate = [N, method](void * area, void ** args){
+            int offset = (N+2)*sizeof(int);
+            offset = manageMember(offset, method.returnType(), area, 0, args ? args[0] : nullptr);
+            for (int i = 0; i < N; ++i) offset = manageMember(offset, method.parameterType(i), area, i+1, args ? args[i+1] : nullptr);
+            return offset;
+        };
+        auto size = iterate(nullptr, nullptr);
+        QSharedPointer<Arguments> p(reinterpret_cast<Arguments*>(malloc(size)), &Arguments::free);
+        new (p.data()) Arguments(N+1);
+        iterate(p.data(), args);
+        return p;
+    }
+    void ** args() const { return nullptr; } // TODO
+};
+
+class ObjectProxy : public QObject {
     QScopedPointer<QMetaObject, QScopedPointerPodDeleter> m_o;
     QPointer<QObject> m_target;
     QVector<CacheEntry> m_cache; // cache of property values
@@ -123,7 +192,6 @@ class PropertyProxy : public QObject {
             });
         }
     }
-
 public:
     Q_OBJECT_CHECK
     const QMetaObject *metaObject() const Q_DECL_OVERRIDE {
@@ -146,6 +214,14 @@ public:
                     if (prop.hasNotifySignal()) {
                         m_cache.at(_id).getValue(_a[0]);
                     } else {
+                        // TODO
+                        // for cross-thread calls we should instead:
+                        // 1. read the property in the target's thread
+                        // 2. safely invoke our notification slot
+                        // 3. return the cached value (even if wrong), taking the
+                        //    read to mean "we'll need the value soon-ish"
+                        // 4. all properties should then have synthetic notify signals, even
+                        //    if they really don't
                         readProperty(_a[0], _id, true);
                     }
                 }
@@ -166,22 +242,37 @@ public:
     }
     static void qt_static_metacall(QObject *_o, QMetaObject::Call c, int id, void **a) {
         qDebug() << __FUNCTION__ << c << id << a;
-        if (c != QMetaObject::InvokeMetaMethod) return;
-        auto o = static_cast<PropertyProxy*>(_o);
+        auto o = static_cast<ObjectProxy*>(_o);
         int targetMethodCount = o->m_target->metaObject()->methodCount() - QObject::staticMetaObject.methodCount();
-        if (id < targetMethodCount) {
-            id += QObject::staticMetaObject.methodCount();
-            o->m_target->qt_metacall(c, id, a);
-            return;
+        if (c == QMetaObject::InvokeMetaMethod) {
+            if (id < targetMethodCount) {
+                id += QObject::staticMetaObject.methodCount();
+                if (o->m_target->thread() == QThread::currentThread())
+                    o->m_target->qt_metacall(c, id, a);
+                else {
+                    // copy arguments for a cross-thread call
+                    auto args = Arguments::make(o->m_target->metaObject()->method(id), a);
+                    auto target = o->m_target;
+                    QObject sig;
+                    connect(&sig, &QObject::destroyed, o->m_target, [c, id, args, target]{
+                        target->qt_metacall(c, id, args->args());
+                    });
+                }
+                return;
+            }
+            id -= targetMethodCount;
+            Q_ASSERT(id >= 0 && id < o->m_slots.count());
+            qDebug() << "calling slot" << id;
+            o->m_slots.at(id)(a);
+        } else if (c == QMetaObject::IndexOfMethod) {
+            if (id < targetMethodCount) {
+                id += QObject::staticMetaObject.methodCount();
+                o->m_target->qt_metacall(c, id, a);
+            }
         }
-        id -= targetMethodCount;
-        Q_ASSERT(id >= 0 && id < o->m_slots.count());
-        qDebug() << "calling slot" << id;
-        o->m_slots.at(id)(a);
     }
 
-    PropertyProxy(QObject * target, QObject * parent = 0) : QObject(parent), m_target(target) {
-        typedef QMetaObjectBuilder Q;
+    ObjectProxy(QObject * target, QObject * parent = 0) : QObject(parent), m_target(target) {
         auto tmobj = target->metaObject();
         qDebug() << "target has" << tmobj->methodCount() << "methods";
         dumpMethods(tmobj);
@@ -232,7 +323,7 @@ public:
 int main(int argc, char ** argv) {
     QCoreApplication app{argc, argv};
     ObjectB b;
-    PropertyProxy p(&b);
+    ObjectProxy p(&b);
     b.setObjectName("yay");
     Q_ASSERT(b.objectName() == "yay");
     p.setProperty("objectName", "foo");

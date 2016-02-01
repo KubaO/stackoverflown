@@ -107,7 +107,7 @@ QWidgetList select(const QString & selector) {
    auto it = cache.find(selector);
    if (it == cache.end()) {
       StyleSheet styleSheet;
-      Parser parser(selector + "{}");
+      Parser parser{selector + "{}"};
       if (!parser.parse(&styleSheet))
          return result;
       it = cache.insert(selector, styleSheet);

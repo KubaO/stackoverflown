@@ -101,19 +101,24 @@ public:
 // END FROM
 
 QWidgetList select(const QString & selector) {
+   static QHash<QString, StyleSheet> cache;
    QWidgetList result;
-   Parser parser(selector + "{}");
    QObjectStyleSelector oSel;
-   oSel.styleSheets.append(StyleSheet());
-   if (!parser.parse(&oSel.styleSheets[0]))
-      return result;
+   auto it = cache.find(selector);
+   if (it == cache.end()) {
+      StyleSheet styleSheet;
+      Parser parser(selector + "{}");
+      if (!parser.parse(&styleSheet))
+         return result;
+      it = cache.insert(selector, styleSheet);
+   }
+   oSel.styleSheets.append(*it);
 
    for (auto top : qApp->topLevelWidgets()) {
       auto widgets = top->findChildren<QWidget*>();
       widgets << top;
       for (auto widget : widgets) {
-         StyleSelector::NodePtr n;
-         n.ptr = widget;
+         StyleSelector::NodePtr n { widget };
          auto rules = oSel.styleRulesForNode(n);
          if (!rules.isEmpty()) result << widget;
       }

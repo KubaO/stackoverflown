@@ -12,10 +12,10 @@ public:
 };
 
 namespace NS {
-class B : public QObject {
+class B : public A {
    Q_OBJECT
 public:
-   Q_INVOKABLE B(int a, QObject * parent = 0) : QObject{parent} {
+   Q_INVOKABLE B(int a, QObject * parent = 0) : A{a, parent} {
       B_a = a;
    }
 };
@@ -27,8 +27,10 @@ int main() {
    QScopedPointer<QObject> a {A::staticMetaObject.newInstance(Q_ARG(int, 10))};
    Q_ASSERT(A_a == 10);
    QScopedPointer<QObject> b {NS::B::staticMetaObject.newInstance(Q_ARG(int, 20))};
+   Q_ASSERT(A_a == 20);
    Q_ASSERT(B_a == 20);
    QScopedPointer<QObject> c {b->metaObject()->newInstance(Q_ARG(int, 30))};
+   Q_ASSERT(A_a == 30);
    Q_ASSERT(B_a == 30);
 }
 

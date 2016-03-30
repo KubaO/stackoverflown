@@ -5,17 +5,17 @@ class EchoServer : public QTcpServer
 {
    QStack<QTcpSocket*> m_pool;
    void incomingConnection(qintptr descr) Q_DECL_OVERRIDE {
-      auto newSocket = m_pool.isEmpty();
-      auto s = newSocket ? new QTcpSocket(this) : m_pool.pop();
-      if (newSocket) {
+      if (m_pool.isEmpty()) {
+         auto s = new QTcpSocket(this);
          QObject::connect(s, &QTcpSocket::readyRead, s, [s]{
             s->write(s->readAll());
          });
          QObject::connect(s, &QTcpSocket::disconnected, this, [this, s]{
             m_pool.push(s);
          });
+         m_pool.push(s);
       }
-      s->setSocketDescriptor(descr, QTcpSocket::ConnectedState);
+      m_pool.pop()->setSocketDescriptor(descr, QTcpSocket::ConnectedState);
    }
 public:
    ~EchoServer() { qDebug() << "pool size:" << m_pool.size(); }

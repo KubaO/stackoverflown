@@ -23,19 +23,20 @@ public:
 
 void setupEchoClient(QTcpSocket & sock)
 {
+   static const char kByteCount[] = "byteCount";
    QObject::connect(&sock, &QTcpSocket::connected, [&sock]{
       auto byteCount = 64 + qrand() % 65536;
-      sock.setProperty("byteCount", byteCount);
+      sock.setProperty(kByteCount, byteCount);
       sock.write(QByteArray(byteCount, '\x2A'));
    });
    QObject::connect(&sock, &QTcpSocket::readyRead, [&sock]{
-      auto byteCount = sock.property("byteCount").toInt();
+      auto byteCount = sock.property(kByteCount).toInt();
       if (byteCount) {
          auto read = sock.read(sock.bytesAvailable()).size();
          byteCount -= read;
       }
       if (byteCount <= 0) sock.disconnectFromHost();
-      sock.setProperty("byteCount", byteCount);
+      sock.setProperty(kByteCount, byteCount);
    });
 }
 

@@ -1,19 +1,5 @@
-#include <QApplication>
-#include <QLabel>
-#include <QGridLayout>
-#include <QTableView>
-#include <QHeaderView>
-#include <QGroupBox>
-#include <QThread>
-#include <QDateTime>
-#include <QElapsedTimer>
-#include <QBasicTimer>
-#include <QMutex>
-#include <QMap>
-#include <QStandardItemModel>
+#include <QtWidgets>
 #include <QtConcurrent>
-#include <QPainter>
-#include <QSlider>
 #include <random>
 
 std::default_random_engine reng;
@@ -45,7 +31,7 @@ public:
 };
 
 /// An application that monitors event loops in all threads.
-class LoopMonitoringApp : public QApplication {
+class MonitoringApp : public QApplication {
   Q_OBJECT
   Q_PROPERTY(int timeout READ timeout WRITE setTimeout MEMBER m_timeout)
   Q_PROPERTY(int updatePeriod READ updatePeriod WRITE setUpdatePeriod MEMBER m_updatePeriod)
@@ -73,7 +59,7 @@ private:
   int m_updatePeriod;
 
   class StuckEventLoopNotifier : public QObject {
-    LoopMonitoringApp * m_app;
+    MonitoringApp * m_app;
     QBasicTimer m_timer;
     void timerEvent(QTimerEvent * ev) Q_DECL_OVERRIDE {
       if (ev->timerId() != m_timer.timerId()) return;
@@ -96,7 +82,7 @@ private:
       for (auto & sig : toEmit) emit m_app->loopStateChanged(sig.first, sig.second);
     }
   public:
-    explicit StuckEventLoopNotifier(LoopMonitoringApp * app) : m_app(app) {
+    explicit StuckEventLoopNotifier(MonitoringApp * app) : m_app(app) {
       m_timer.start(100, Qt::CoarseTimer, this);
     }
   };
@@ -115,6 +101,7 @@ private:
     if (stuck) emit loopStateChanged(thread, 0);
     emit threadFinished(thread);
   }
+  Q_SIGNAL void newThreadSignal(QThread*, const QString &);
 protected:
   bool notify(QObject * receiver, QEvent * event) Q_DECL_OVERRIDE {
     auto const curThread = QThread::currentThread();
@@ -127,10 +114,8 @@ protected:
     it->ping = now;
     lock.unlock();
     if (newThread) {
-      QObject::connect(curThread, SIGNAL(finished()), this, SLOT(threadFinishedSlot()));
-      QMetaObject::invokeMethod(this, "newThread", Qt::QueuedConnection,
-                                Q_ARG(QThread*, curThread),
-                                Q_ARG(QString, curThread->objectName()));
+      connect(curThread, &QThread::finished, this, &MonitoringApp::threadFinishedSlot);
+      emit newThreadSignal(curThread, curThread->objectName());
     }
     timer.start();
     auto result = Base::notify(receiver, event); // This is where the event loop can get "stuck".
@@ -151,7 +136,7 @@ protected:
     return result;
   }
 public:
-  explicit LoopMonitoringApp(int & argc, char ** argv);
+  explicit MonitoringApp(int & argc, char ** argv);
   /// The event loop for a given thread has gotten stuck, or unstuck.
   /** A zero elapsed time indicates that the loop is not stuck. The signal will be
     * emitted periodically with increasing values of `elapsed` for a given thread as long
@@ -163,7 +148,7 @@ public:
   /// The thread has a new histogram available.
   /** This signal is not sent more often than each updatePeriod().
     * The thread might not exist when this notification is received. */
-  Q_SIGNAL void newHistogram(QThread *, const LoopMonitoringApp::Histogram &);
+  Q_SIGNAL void newHistogram(QThread *, const MonitoringApp::Histogram &);
   /// The thread has finished.
   /** The thread might not exist when this notification is received. A newHistogram
     * signal is always emitted prior to this signal's emission. */
@@ -176,19 +161,21 @@ public:
   Q_SLOT void setUpdatePeriod(int updatePeriod) { m_updatePeriod = updatePeriod; }
 };
 Q_DECLARE_METATYPE(QThread*)
-Q_DECLARE_METATYPE(LoopMonitoringApp::Histogram)
+Q_DECLARE_METATYPE(MonitoringApp::Histogram)
 
-LoopMonitoringApp::LoopMonitoringApp(int & argc, char ** argv) :
-  LoopMonitoringApp::Base(argc, argv),
+MonitoringApp::MonitoringApp(int & argc, char ** argv) :
+  MonitoringApp::Base(argc, argv),
   m_timeout(1000), m_updatePeriod(250), m_notifier(this)
 {
   qRegisterMetaType<QThread*>();
-  qRegisterMetaType<LoopMonitoringApp::Histogram>();
+  qRegisterMetaType<MonitoringApp::Histogram>();
+  connect(this, &MonitoringApp::newThreadSignal, this, &MonitoringApp::newThread,
+          Qt::QueuedConnection);
   m_notifier.moveToThread(&m_notifierThread);
   m_notifierThread.start();
 }
 
-QImage renderHistogram(const LoopMonitoringApp::Histogram & h) {
+QImage renderHistogram(const MonitoringApp::Histogram & h) {
   const int blockX = 2, blockY = 2;
   QImage img(1 + h.size() * blockX, 32 * blockY, QImage::Format_ARGB32_Premultiplied);
   img.fill(Qt::white);
@@ -203,7 +190,7 @@ QImage renderHistogram(const LoopMonitoringApp::Histogram & h) {
   return img;
 }
 
-class LoopMonitoringViewModel : public QStandardItemModel {
+class MonitoringViewModel : public QStandardItemModel {
   Q_OBJECT
   QMap<QThread*, QPair<QStandardItem*, QStandardItem*>> m_threadItems;
   Q_SLOT void newThread(QThread * thread, const QString & threadName) {
@@ -217,7 +204,7 @@ class LoopMonitoringViewModel : public QStandardItemModel {
     histogram->setEditable(false);
     setItem(row, 1, histogram);
     m_threadItems[thread] = qMakePair(captionItem, histogram);
-    newHistogram(thread, LoopMonitoringApp::Histogram());
+    newHistogram(thread, MonitoringApp::Histogram());
   }
   Q_SLOT void newHistogramImage(QThread * thread, const QImage & img) {
     auto it = m_threadItems.find(thread);
@@ -226,7 +213,7 @@ class LoopMonitoringViewModel : public QStandardItemModel {
     it->second->setData(img, Qt::DecorationRole);
   }
   Q_SIGNAL void newHistogramImageSignal(QThread * thread, const QImage & img);
-  Q_SLOT void newHistogram(QThread * thread, const LoopMonitoringApp::Histogram & histogram) {
+  Q_SLOT void newHistogram(QThread * thread, const MonitoringApp::Histogram & histogram) {
     QtConcurrent::run([this, thread, histogram]{
       emit newHistogramImageSignal(thread, renderHistogram(histogram));
     });
@@ -243,15 +230,14 @@ class LoopMonitoringViewModel : public QStandardItemModel {
     m_threadItems.remove(thread);
   }
 public:
-  LoopMonitoringViewModel(QObject *parent = 0) : QStandardItemModel(parent) {
-    connect(this, SIGNAL(newHistogramImageSignal(QThread*,QImage)),
-            SLOT(newHistogramImage(QThread*,QImage)));
-    LoopMonitoringApp * app = qobject_cast<LoopMonitoringApp*>(qApp);
-    connect(app, SIGNAL(newThread(QThread*,QString)), SLOT(newThread(QThread*,QString)));
-    connect(app, SIGNAL(newHistogram(QThread*,LoopMonitoringApp::Histogram)),
-            SLOT(newHistogram(QThread*,LoopMonitoringApp::Histogram)));
-    connect(app, SIGNAL(threadFinished(QThread*)), SLOT(threadFinished(QThread*)));
-    connect(app, SIGNAL(loopStateChanged(QThread*,int)), SLOT(loopStateChanged(QThread*,int)));
+  MonitoringViewModel(QObject *parent = 0) : QStandardItemModel(parent) {
+    connect(this, &MonitoringViewModel::newHistogramImageSignal,
+            this, &MonitoringViewModel::newHistogramImage);
+    auto app = qobject_cast<MonitoringApp*>(qApp);
+    connect(app, &MonitoringApp::newThread, this, &MonitoringViewModel::newThread);
+    connect(app, &MonitoringApp::newHistogram,  this, &MonitoringViewModel::newHistogram);
+    connect(app, &MonitoringApp::threadFinished, this, &MonitoringViewModel::threadFinished);
+    connect(app, &MonitoringApp::loopStateChanged, this, &MonitoringViewModel::loopStateChanged);
   }
 };
 
@@ -275,8 +261,8 @@ public:
 
 int main(int argc, char *argv[])
 {
-  LoopMonitoringApp app(argc, argv);
-  LoopMonitoringViewModel model;
+  MonitoringApp app(argc, argv);
+  MonitoringViewModel model;
   WorkerObject workerObject;
   Thread workerThread;
 
@@ -293,7 +279,7 @@ int main(int argc, char *argv[])
   QSlider range(Qt::Horizontal), probability(Qt::Horizontal);
 
   timeoutLabel.setMinimumWidth(50);
-  timeoutLabel.connect(&timeout, SIGNAL(valueChanged(int)), SLOT(setNum(int))); // :(
+  QObject::connect(&timeout, &QSlider::valueChanged, &timeoutLabel, (void(QLabel::*)(int))&QLabel::setNum);
   timeout.setMinimum(50);
   timeout.setMaximum(5000);
   timeout.setValue(app.timeout());
@@ -331,7 +317,7 @@ int main(int argc, char *argv[])
       QMetaObject::invokeMethod(&workerObject, "start");
     } else workerThread.quit();
   });
-  QObject::connect(&timeout, &QAbstractSlider::valueChanged, &app, &LoopMonitoringApp::setTimeout);
+  QObject::connect(&timeout, &QAbstractSlider::valueChanged, &app, &MonitoringApp::setTimeout);
   workerObject.moveToThread(&workerThread);
   w.show();
   return app.exec();

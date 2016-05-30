@@ -1,4 +1,3 @@
-
 QT = widgets 
 CONFIG += c++11
 TARGET = appmonitor-37524491

@@ -10,6 +10,10 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 } else {
     QT = gui %MODULES%
     unix:QMAKE_CXXFLAGS += -std=c++11
+    macx {
+        QMAKE_CXXFLAGS += -stdlib=libc++
+        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
+    }
 }
 @endif
 @else
@@ -22,6 +26,10 @@ greaterThan(QT_MAJOR_VERSION, 4) {
     CONFIG += c++11
 } else {
     unix:QMAKE_CXXFLAGS += -std=c++11
+    macx {
+        QMAKE_CXXFLAGS += -stdlib=libc++
+        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
+    }
 }
 @endif
 CONFIG -= app_bundle
@@ -35,6 +43,10 @@ greaterThan(QT_MAJOR_VERSION, 4) {
     CONFIG += c++11
 } else {
     unix:QMAKE_CXXFLAGS += -std=c++11
+    macx {
+        QMAKE_CXXFLAGS += -stdlib=libc++
+        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
+    }
 }
 @endif
 CONFIG -= qt app_bundle

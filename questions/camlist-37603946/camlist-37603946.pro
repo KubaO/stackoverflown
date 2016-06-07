@@ -1,6 +1,5 @@
-
-QT = widgets 
+QT = widgets multimedia
 CONFIG += c++11
-TARGET = tostdstr-37669003
+TARGET = camlist-37603946
 TEMPLATE = app
 SOURCES += main.cpp

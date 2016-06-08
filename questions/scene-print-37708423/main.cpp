@@ -49,6 +49,6 @@ int main(int argc, char *argv[])
       qDebug() << page << scale << source << target;
       scene.render(&painter, target, source);
    });
-   printDialog.show(); // modal on OS X thus must succeed `connect` above
+   printDialog.show(); // modal on OS X thus must follow `connect` above
    return app.exec();
 }

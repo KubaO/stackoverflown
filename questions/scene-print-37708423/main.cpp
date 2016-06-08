@@ -9,25 +9,30 @@ int main(int argc, char *argv[])
    QGraphicsView view(&scene);
 
    auto in = 72.0f;
+   auto pen = QPen(Qt::black, 0.01*in);
    QRectF canvasRect(0, 0, 4*in, 4*in);
    // this is to show actual scene
    QGraphicsRectItem sss(canvasRect);
+   sss.setPen(pen);
    sss.setBrush(Qt::blue);
    scene.addItem(&sss);
    // this item is partially outside top left
    QGraphicsEllipseItem e1(-0.5*in, -0.5*in, 1*in, 1*in);
+   e1.setPen(pen);
    e1.setBrush(Qt::yellow);
    scene.addItem(&e1);
    // this item is partially outside center
    QGraphicsEllipseItem e2(2*in, 2*in, 2.5*in, 1*in);
+   e2.setPen(pen);
    e2.setBrush(Qt::yellow);
    scene.addItem(&e2);
    // this item is partially outside right
    QGraphicsEllipseItem e3(3.5*in, 3.5*in, 1*in, 1*in);
+   e3.setPen(pen);
    e3.setBrush(Qt::yellow);
    scene.addItem(&e3);
 
-   view.fitInView(scene.sceneRect());
+   view.fitInView(scene.sceneRect(), Qt::KeepAspectRatio);
    view.show();
 
    QPrinter printer;

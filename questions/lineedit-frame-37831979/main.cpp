@@ -3,37 +3,50 @@
 #include <QtUiTools>
 
 const char ui[] = R"EOF(
- <ui version="4.0">
-  <class>Form</class>
-  <widget class="QWidget" name="Form">
-   <layout class="QFormLayout" name="formLayout">
-    <item row="0" column="0">
-     <widget class="QLabel" name="label">
-      <property name="text">
-       <string>TextLabel</string>
-      </property>
-     </widget>
-    </item>
-    <item row="0" column="1">
-     <widget class="QLineEdit" name="lineEdit"/>
-    </item>
-   </layout>
-  </widget>
-  <resources/>
+  <ui version="4.0">
+   <class>DatasetWidget</class>
+   <widget class="QWidget" name="DatasetWidget">
+    <layout class="QVBoxLayout" name="verticalLayout">
+     <item>
+      <widget class="QLabel" name="lblCaptionDatensatz">
+       <property name="text">
+        <string>Datensatz:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="lblDatensatz">
+       <property name="text">
+        <string>C-XXXX-XXX</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="leDescriptor">
+       <property name="maxLength">
+        <number>7</number>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <layout class="QFormLayout" name="formDisp"></layout>
+     </item>
+    </layout>
+   </widget>
   <connections/>
- </ui>)EOF";
+  </ui>)EOF";
 
 int main(int argc, char ** argv) {
    QApplication app{argc, argv};
    QBuffer buf;
    buf.setData(ui, sizeof(ui));
    auto w = QUiLoader().load(&buf);
-   auto & layout = *static_cast<QFormLayout*>(w->layout());
-   QLineEdit edit;
-   layout.itemAt(0)->widget()->setMinimumHeight(50);
-   layout.addRow("Edit here", &edit);
-   edit.setMinimumHeight(100);
-   layout.activate();
+   auto & layout = *w->findChild<QFormLayout*>("formDisp");
+   QLineEdit edit1, edit2;
+   layout.addRow("Edit1", &edit1);
+   layout.addRow("Edit2", &edit2);
+   edit1.setMinimumHeight(50);
+   edit2.setMinimumHeight(100);
    w->show();
    return app.exec();
 }

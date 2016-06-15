@@ -30,7 +30,10 @@ int main(int argc, char ** argv) {
    auto w = QUiLoader().load(&buf);
    auto & layout = *static_cast<QFormLayout*>(w->layout());
    QLineEdit edit;
+   layout.itemAt(0)->widget()->setMinimumHeight(50);
    layout.addRow("Edit here", &edit);
+   edit.setMinimumHeight(100);
+   layout.activate();
    w->show();
    return app.exec();
 }

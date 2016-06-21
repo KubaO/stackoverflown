@@ -1,0 +1,6 @@
+QT = core 
+CONFIG += console c++11
+CONFIG -= app_bundle
+TARGET = qreal-literal-37876934
+TEMPLATE = app
+SOURCES += main.cpp

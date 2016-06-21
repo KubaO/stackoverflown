@@ -27,6 +27,7 @@ template<> struct TargetAction<QCoreApplication> {
    static constexpr slot_type destination(QCoreApplication*) { return &QCoreApplication::quit; }
 };
 
+// SFINAE
 template <typename Src, typename Dst>
 void proceed(Src * src, Dst * dst) {
    QObject::connect(src, SourceAction<Src>::source(src),
@@ -40,7 +41,7 @@ void proceed(Src * src, F && f) {
 QNetworkReply * download(QNetworkAccessManager * mgr, const QUrl & url) {
    return mgr->get(QNetworkRequest{url});
 }
-QProcess * run(QProcess * process, const QString & program, const QStringList & args) {
+QProcess * setup(QProcess * process, const QString & program, const QStringList & args) {
    process->setProgram(program);
    process->setArguments(args);
    return process;
@@ -54,7 +55,7 @@ int main(int argc, char ** argv) {
    QProcess process;
 
    proceed(download(&mgr, {"http://www.google.com"}), &process);
-   proceed(run(&process, app.applicationFilePath(), {"dummy"}), &app);
+   proceed(setup(&process, app.applicationFilePath(), {"dummy"}), &app);
    proceed(&process, []{ qDebug() << "quitting"; });
    return app.exec();
 }

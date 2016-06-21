@@ -15,8 +15,8 @@ public:
 };
 
 int main(int argc, char ** argv) {
-   QApplication app(argc, argv);
-   QLabel w("Hello!");
+   QApplication app{argc, argv};
+   QLabel w{"Hello!"};
    w.setMinimumSize(200, 100);
    w.show();
    ParentHacker::setParent(&w, &app);
@@ -26,17 +26,18 @@ int main(int argc, char ** argv) {
 #else
 #include <QApplication>
 #include <QLabel>
+#include <cstdint>
 
 int main(int argc, char ** argv) {
-   QApplication app(argc, argv);
+   QApplication app{argc, argv};
    QWidget parent;
-   QLabel l1("Close me to quit!"), l2("Hello!");
-   foreach (QLabel * label, QVector<QLabel*>() << &l1 << &l2) {
+   QLabel l1{"Close me to quit!"}, l2{"Hello!"};
+   for (auto label : {&l1, &l2}) {
       label->setMinimumSize(200, 100);
       label->setParent(&parent);
       label->setWindowFlags(Qt::Window);
       label->setText(QString("%1 Parent: %2.").
-                     arg(label->text()).arg((intptr_t)label->parent(), 0, 16));
+                     arg(label->text()).arg((uintptr_t)label->parent(), 0, 16));
       label->show();
    }
    l2.setAttribute(Qt::WA_QuitOnClose, false);

@@ -20,7 +20,7 @@ struct Visitor
 };
 
 template <typename V>
-void visit(const QVariant & variant, const V & visitor) {
+bool visit(const QVariant & variant, const V & visitor) {
    auto & metaObject = V::staticMetaObject;
    for (int i = 0; i < metaObject.methodCount(); ++i) {
       auto method = metaObject.method(i);
@@ -31,8 +31,9 @@ void visit(const QVariant & variant, const V & visitor) {
          continue;
       QGenericArgument arg0{variant.typeName(), variant.constData()};
       if (method.invokeOnGadget((void*)&visitor, arg0))
-         break;
+         return true;
    }
+   return false;
 }
 
 int main() {

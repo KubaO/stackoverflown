@@ -3,12 +3,12 @@
 
 template <typename C>
 void onTimeout(int msec, C && callable) {
-   QTimer::singleShot(msec, std::move(callable));
+   QTimer::singleShot(msec, std::forward<C>(callable));
 }
 
 template <typename C>
 void onTimeout(int msec, QObject * context, C && callable) {
-   QTimer::singleShot(msec, context, std::move(callable));
+   QTimer::singleShot(msec, context, std::forward<C>(callable));
 }
 
 int main(int argc, char ** argv) {

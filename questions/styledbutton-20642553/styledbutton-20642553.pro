@@ -1,15 +1,14 @@
-#-------------------------------------------------
-#
-# Project created by QtCreator 2013-12-17T16:03:00
-#
-#-------------------------------------------------
-
-QT       += core gui
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
-
+greaterThan(QT_MAJOR_VERSION, 4) {
+    QT = widgets
+    CONFIG += c++11
+} else {
+    QT = gui
+    unix:QMAKE_CXXFLAGS += -std=c++11
+    macx {
+        QMAKE_CXXFLAGS += -stdlib=libc++
+        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
+    }
+}
 TARGET = styledbutton-20642553
-
 TEMPLATE = app
-
-
 SOURCES += main.cpp

@@ -1,3 +1,4 @@
+// https://github.com/KubaO/stackoverflown/tree/master/questions/styledbutton-20642553
 #include <QPushButton>
 #include <QHBoxLayout>
 #include <QApplication>

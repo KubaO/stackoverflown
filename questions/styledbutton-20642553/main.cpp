@@ -14,8 +14,8 @@ int main(int argc, char *argv[])
    QPushButton button2{"Styled"};
    button2.setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
    button2.setStyleSheet(
-            "* { border: 2px solid #8f8f91; border-radius: 12px; background-color: #d02020; }"
-            "*:pressed { background-color: #f6f7fa; }");
+      "* { border: 2px solid #8f8f91; border-radius: 12px; background-color: #d02020; }"
+      "*:pressed { background-color: #f6f7fa; }");
    layout.addWidget(&button2);
    auto pal = w.palette();
    pal.setBrush(QPalette::Background, Qt::darkBlue);

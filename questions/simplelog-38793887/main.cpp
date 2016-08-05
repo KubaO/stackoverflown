@@ -15,6 +15,7 @@ int main(int argc, char ** argv) {
    QWidget w;
    QVBoxLayout layout{&w};
    QListView view;
+   bool viewAtBottom = false;
    QPushButton clear{"Clear"};
    layout.addWidget(&view);
    layout.addWidget(&clear);
@@ -22,6 +23,12 @@ int main(int argc, char ** argv) {
               &model, [&]{ model.setStringList(QStringList{}); });
    view.setModel(&model);
    view.setUniformItemSizes(true);
+   Q::connect(view.model(), &QAbstractItemModel::rowsAboutToBeInserted, &view, [&] {
+      auto bar = view.verticalScrollBar();
+      viewAtBottom = bar ? (bar->value() == bar->maximum()) : false;
+   });
+   Q::connect(view.model(), &QAbstractItemModel::rowsInserted,
+              &view, [&]{ if (viewAtBottom) view.scrollToBottom(); });
 
    QtConcurrent::run([]{
       auto delay = 10;

@@ -10,6 +10,7 @@ QString fromUtf8Hex(const QByteArray & hex) {
 
 QByteArray toUtf16Hex(QString str) {
    str.prepend(QChar::ByteOrderMark);
+   // It is OK to use `fromRawData` since toHex copies it.
    return QByteArray::fromRawData(
             reinterpret_cast<const char*>(str.constData()), (str.size()+1)*2).toHex();
 }

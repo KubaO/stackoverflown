@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
 
 #endif
 
-#if 1
+#if 0
 
 #include <QtWidgets>
 
@@ -104,5 +104,45 @@ int main(int argc, char *argv[])
    window.show();
    return a.exec();
 }
+
+#endif
+
+#if 1
+
+#include <QtGui>
+#if QT_VERSION_MAJOR >= 5
+#include <QtWidgets>
+#endif
+
+struct Display : QLabel {
+   Q_SLOT void onClicked() {
+      setText(sender()->objectName());
+   }
+   Q_OBJECT
+};
+
+int main(int argc, char *argv[])
+{
+   QApplication a{argc, argv};
+   QWidget window;
+   QGridLayout layout{&window};
+   QVarLengthArray<QPushButton, 12> buttons(12);
+   Display display;
+
+   const int rows = 4, columns = 3;
+   for (int i = 0; i < rows; ++ i)
+      for (int j = 0; j < columns; ++j) {
+         auto & button = buttons[i*columns+j];
+         button.setText(QString{"(%1,%2)"}.arg(i).arg(j));
+         button.setObjectName(QString{"buton_%1_%2"}.arg(i).arg(j));
+         layout.addWidget(&button, i, j);
+         display.connect(&button, SIGNAL(clicked()), SLOT(onClicked()));
+      }
+   layout.addWidget(&display, rows, 0, 1, columns);
+
+   window.show();
+   return a.exec();
+}
+#include "main.moc"
 
 #endif

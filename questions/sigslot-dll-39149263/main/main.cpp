@@ -1,4 +1,5 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/sigslot-dll-39149263
+//### main/main.cpp
 #include "lib1/lib1.h"
 #include "lib2/lib2.h"
 

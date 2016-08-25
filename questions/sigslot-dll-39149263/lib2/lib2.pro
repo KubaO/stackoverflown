@@ -1,4 +1,5 @@
-QT = widgets
+### lib2/lib2.pro
+QT = core
 CONFIG += c++11
 TEMPLATE = lib
 HEADERS += lib2.h

@@ -5,7 +5,7 @@
 
 #ifdef WIN32
 #ifndef LIB2_EXPORT
-#define LIB2_EXPORT __declspec(dllexport)
+#define LIB2_EXPORT __declspec(dllimport)
 #endif
 #else
 #define LIB2_EXPORT

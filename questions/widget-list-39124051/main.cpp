@@ -6,7 +6,11 @@
 #include <vector>
 
 struct H : QWidget {
+    void * data;
     static void swap_d(QObject * a, QObject * b) { static_cast<H*>(a)->d_ptr.swap(static_cast<H*>(b)->d_ptr); }
+    static void swap_data(QWidget * a, QWidget *b) {
+        std::swap((&static_cast<H*>(a)->data)[-1], (&static_cast<H*>(b)->data)[-1]);
+    }
     static QObjectPrivate * d(QObject * o) { return static_cast<QObjectPrivate*>(static_cast<H*>(o)->d_ptr.data()); }
     static QWidgetPrivate * dw(QWidget * o) { return static_cast<QWidgetPrivate*>(static_cast<H*>(o)->d_ptr.data()); }
 };
@@ -18,12 +22,13 @@ struct LH : QWidgetItem {
     }
 };
 
-struct PH : QPainter {
+struct PH : QPaintDevice {
+    QPaintDevicePrivate * reserved2;
     static void swap_paintDevice(QWidget * a, QWidget * b) {
-        auto pa = static_cast<QPaintDevice*>(a);
-        auto pb = static_cast<QPaintDevice*>(b);
+        auto pa = static_cast<PH*>(static_cast<QPaintDevice*>(a));
+        auto pb = static_cast<PH*>(static_cast<QPaintDevice*>(b));
         std::swap(pa->painters, pb->painters);
-        std::swap(pa->reserved, pb->reserved);
+        std::swap((&pa->reserved2)[-1], (&pb->reserved2)[-1]); // ugly hack
     }
 };
 
@@ -79,7 +84,8 @@ void swapWidgets(QWidget * aw, QWidget * bw) {
     std::swap(a->focus_next, b->focus_next);
     std::swap(a->focus_prev, b->focus_prev);
     H::swap_d(aw, bw);
-    H::swap_paintDevice(aw, bw);
+    H::swap_data(aw, bw);
+    PH::swap_paintDevice(aw, bw);
 }
 
 class AppointmentSchedulePrivate {
@@ -136,6 +142,7 @@ int main(int argc, char ** argv) {
     QWidget w;
     QVBoxLayout layout{&w};
     std::array<QDate, 2> dates { QDate{2000, 1, 1}, QDate{2016,1,1} };
+    qDebug() << sizeof(QObject)-sizeof(void*) << sizeof(QPaintDevice)-sizeof(void*) << sizeof(QWidget)-sizeof(void*);
 
     std::list<AppointmentSchedule> schedules1;
     for (auto & date : dates) {

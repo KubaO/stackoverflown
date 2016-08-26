@@ -11,8 +11,9 @@ public:
 
 void foo(QScopedPointer<T> & p)
 {
+   using std::swap;
    QScopedPointer<T> local;
-   std::swap(local, p);
+   swap(local, p);
    local->act();
 }
 

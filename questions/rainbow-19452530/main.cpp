@@ -25,9 +25,10 @@ QColor wavelengthToColor(qreal lambda)
 
     static qreal thresholds[] = { 380, 440, 490, 510, 580, 645, 780 };
     for (unsigned int i = 0; i < sizeof(thresholds)/sizeof(thresholds[0]); ++ i) {
+        using std::swap;
         qreal t1 = thresholds[i], t2 = thresholds[i+1];
         if (lambda < t1 || lambda >= t2) continue;
-        if (i%2) std::swap(t1, t2);
+        if (i%2) swap(t1, t2);
         color.c[i % 3] = (i < 5) ? (lambda - t2) / (t1-t2) : 0.0;;
         color.c[2-i/2] = 1.0;
         factor = 1.0;

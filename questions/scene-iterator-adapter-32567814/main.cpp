@@ -20,8 +20,9 @@ class ItemListIterator {
                  << it.m_index;
    }
    friend void swap(ItemListIterator& a, ItemListIterator& b) {
-      std::swap(a.m_items, b.m_items);
-      std::swap(a.m_index, b.m_index);
+      using std::swap;
+      swap(a.m_items, b.m_items);
+      swap(a.m_index, b.m_index);
    }
    template <typename T> T item_cast(QGraphicsItem* item) {
       // use qgraphicsitem_cast if you don't have RTTI enabled

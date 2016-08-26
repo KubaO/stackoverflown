@@ -30,7 +30,7 @@ class Scene : public QGraphicsScene
     void newItem() {
         addItem(m_item = new QGraphicsPathItem);
         m_item->setPen(QPen(QColor(qrand() % 256, qrand() % 256, qrand() % 256)));
-        m_path = QPainterPath(); // std::swap(m_path, QPainterPath());
+        m_path = QPainterPath(); // using std::swap; swap(m_path, QPainterPath());
     }
     void newPoint(const QPointF& pt) {
         if (! m_item) {

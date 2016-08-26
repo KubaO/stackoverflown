@@ -19,8 +19,9 @@ class LayoutIterator {
       return dbg << it.m_layout << it.m_index;
    }
    friend void swap(LayoutIterator& a, LayoutIterator& b) {
-      std::swap(a.m_layout, b.m_layout);
-      std::swap(a.m_index, b.m_index);
+      using std::swap;
+      swap(a.m_layout, b.m_layout);
+      swap(a.m_index, b.m_index);
    }
 public:
    LayoutIterator() : m_index(0) {}

@@ -5,11 +5,13 @@
 #include <list>
 #include <vector>
 
+using std::swap;
+
 struct H : QWidget {
     void * data;
     static void swap_d(QObject * a, QObject * b) { static_cast<H*>(a)->d_ptr.swap(static_cast<H*>(b)->d_ptr); }
     static void swap_data(QWidget * a, QWidget *b) {
-        std::swap((&static_cast<H*>(a)->data)[-1], (&static_cast<H*>(b)->data)[-1]);
+        swap((&static_cast<H*>(a)->data)[-1], (&static_cast<H*>(b)->data)[-1]);
     }
     static QObjectPrivate * d(QObject * o) { return static_cast<QObjectPrivate*>(static_cast<H*>(o)->d_ptr.data()); }
     static QWidgetPrivate * dw(QWidget * o) { return static_cast<QWidgetPrivate*>(static_cast<H*>(o)->d_ptr.data()); }
@@ -27,8 +29,8 @@ struct PH : QPaintDevice {
     static void swap_paintDevice(QWidget * a, QWidget * b) {
         auto pa = static_cast<PH*>(static_cast<QPaintDevice*>(a));
         auto pb = static_cast<PH*>(static_cast<QPaintDevice*>(b));
-        std::swap(pa->painters, pb->painters);
-        std::swap((&pa->reserved2)[-1], (&pb->reserved2)[-1]); // ugly hack
+        swap(pa->painters, pb->painters);
+        swap((&pa->reserved2)[-1], (&pb->reserved2)[-1]); // ugly hack
     }
 };
 
@@ -77,12 +79,12 @@ void swapWidgets(QWidget * aw, QWidget * bw) {
     setLayoutItem(bw, aw);
 
     auto a = H::dw(aw), b = H::dw(bw);
-    std::swap(a->q_ptr, b->q_ptr);
+    swap(a->q_ptr, b->q_ptr);
     setQPtr(a, b->q_ptr);
     setQPtr(b, a->q_ptr);
 
-    std::swap(a->focus_next, b->focus_next);
-    std::swap(a->focus_prev, b->focus_prev);
+    swap(a->focus_next, b->focus_next);
+    swap(a->focus_prev, b->focus_prev);
     H::swap_d(aw, bw);
     H::swap_data(aw, bw);
     PH::swap_paintDevice(aw, bw);

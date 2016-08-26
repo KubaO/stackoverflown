@@ -177,7 +177,8 @@ protected:
             QMetaCallEvent *curMce = static_cast<QMetaCallEvent*>(cur.event);
             if (curMce->id() != mce->id()) continue;
             if (! m_compressed.containsMatching(Connection::fromMetaCallEvent(curMce, receiver))) continue;
-            std::swap(cur.event, event); // Remove this line if you want to keep the oldest event instead
+            using std::swap;
+            swap(cur.event, event); // Remove this line if you want to keep the oldest event instead
             // QEvent keeps track of whether it has been posted. Deletion of a formerly posted event
             // takes the posted event list mutex and does a useless search of the posted event
             // list upon deletion. We thus clear the QEvent::posted flag before deletion.

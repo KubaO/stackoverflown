@@ -1,10 +1,6 @@
-QT       += core
-QT       -= gui
-
+QT = core
 TARGET = scopedpointer-30239085
-CONFIG   += console c++11
-CONFIG   -= app_bundle
-
+CONFIG += console c++11
+CONFIG -= app_bundle
 TEMPLATE = app
-
 SOURCES += main.cpp

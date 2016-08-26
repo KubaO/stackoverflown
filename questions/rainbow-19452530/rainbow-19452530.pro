@@ -1,15 +1,14 @@
-#-------------------------------------------------
-#
-# Project created by QtCreator 2013-10-18T13:27:54
-#
-#-------------------------------------------------
-
-QT       += gui
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
-CONFIG += c++11
-
+greaterThan(QT_MAJOR_VERSION, 4) {
+    QT = widgets
+    CONFIG += c++11
+} else {
+    QT = gui
+    unix:QMAKE_CXXFLAGS += -std=c++11
+    macx {
+        QMAKE_CXXFLAGS += -stdlib=libc++
+        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
+    }
+}
 TARGET = rainbow-19452530
-
 TEMPLATE = app
-
 SOURCES += main.cpp

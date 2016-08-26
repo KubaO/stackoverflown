@@ -1,10 +1,14 @@
-QT       += core gui
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets core_private
-
-message($$INCLUDEPATH)
-
+greaterThan(QT_MAJOR_VERSION, 4) {
+    QT = widgets core_private
+    CONFIG += c++11
+} else {
+    QT = gui core_private
+    unix:QMAKE_CXXFLAGS += -std=c++11
+    macx {
+        QMAKE_CXXFLAGS += -stdlib=libc++
+        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
+    }
+}
 TARGET = compress-20866996
-
 TEMPLATE = app
-
 SOURCES += main.cpp

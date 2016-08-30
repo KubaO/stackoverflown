@@ -1,34 +1,27 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/async-file-io-39226814
 #include <QtWidgets>
-#include <QtConcurrent>
 
 class AData : public QObject
 {
     Q_OBJECT
     QFile m_file;
-    QThreadPool * m_ioPool = QThreadPool::globalInstance();
 public:
     explicit AData(QObject * parent = nullptr) : QObject{parent} {
-        connect(this, &AData::save, [=](const QByteArray & data, qint64 pos){
-            QtConcurrent::run(m_ioPool, [=]{
-                m_file.seek(pos);
-                m_file.write(data);
-            });
+        connect(this, &AData::save, this, [=](const QByteArray & data, qint64 pos){
+            m_file.seek(pos);
+            m_file.write(data);
         });
-        connect(this, &AData::load, [=](qint64 pos, qint64 len){
-           QtConcurrent::run(m_ioPool, [=]() mutable{
-               m_file.seek(pos);
-               if (len == -1) len = m_file.size();
-               auto data = m_file.read(len);
-               emit loaded(data, pos);
-           });
+        connect(this, &AData::load, this, [=](qint64 pos, qint64 len){
+           m_file.seek(pos);
+           if (len == -1) len = m_file.size();
+           auto data = m_file.read(len);
+           emit loaded(data, pos);
         });
     }
     bool open(const QString & name) {
         m_file.setFileName(name);
         return m_file.open(QIODevice::ReadWrite);
     }
-    void setPool(QThreadPool * pool) { m_ioPool = pool; }
     Q_SIGNAL void save(const QByteArray &data, qint64 pos = 0) const;
     Q_SIGNAL void load(qint64 pos, qint64 len) const;
     Q_SIGNAL void loaded(const QByteArray &data, qint64 pos) const;
@@ -36,10 +29,13 @@ public:
 
 int main(int argc, char ** argv) {
     QApplication app{argc, argv};
-    QThreadPool ioPool;
+    struct Thread : QThread {
+        ~Thread() { quit(); wait(); }
+    } ioThread;
     AData data;
-    data.setPool(&ioPool);
     data.open("myfile");
+    data.moveToThread(&ioThread);
+    ioThread.start();
 
     QWidget ui;
     QGridLayout layout{&ui};

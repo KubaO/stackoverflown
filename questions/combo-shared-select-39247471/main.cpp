@@ -10,16 +10,18 @@ int main(int argc, char ** argv) {
     QWidget ui;
     QHBoxLayout layout{&ui};
     std::array<QComboBox, 3> combos;
+    // setIndices could be a method in a class
+    auto setIndices = [&combos](int index) {
+        for (auto & combo : combos)
+            combo.setCurrentIndex(index);
+    };
     for (auto & combo : combos) {
+        using namespace std::placeholders;
         layout.addWidget(&combo);
         combo.setModel(&model);
         QObject::connect(&combo,
                          static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
-                         [&combos,&combo](int index){
-            for (auto & combo2 : combos)
-                if (&combo2 != &combo)
-                    combo2.setCurrentIndex(index);
-        });
+                         setIndices);
     }
     ui.show();
 

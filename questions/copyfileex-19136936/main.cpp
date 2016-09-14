@@ -1,22 +1,18 @@
-#include <QApplication>
-#include <QFileDialog>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QLabel>
-#include <QGridLayout>
-#include <QThread>
-#include <QPointer>
-#include <QStateMachine>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/copyfileex-19136936
+#include <QtGui>
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#include <QtWidgets>
+#endif
 #include <windows.h>
 
 static QString getLastErrorMsg() {
     LPWSTR bufPtr = NULL;
     DWORD err = GetLastError();
-    FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+    FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
                    FORMAT_MESSAGE_FROM_SYSTEM |
                    FORMAT_MESSAGE_IGNORE_INSERTS,
                    NULL, err, 0, (LPWSTR)&bufPtr, 0, NULL);
-    const QString result = 
+    const QString result =
         (bufPtr) ? QString::fromUtf16((const ushort*)bufPtr).trimmed() :
                    QString("Unknown Error %1").arg(err);
     LocalFree(bufPtr);

@@ -9,6 +9,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
         QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
     }
 }
+QT += concurrent
 TARGET = copyfileex-19136936
 TEMPLATE = app
 SOURCES += main.cpp

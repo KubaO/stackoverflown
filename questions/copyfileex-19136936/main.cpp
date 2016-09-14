@@ -1,5 +1,6 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/copyfileex-19136936
 #include <QtGui>
+#include <QtConcurrent>
 #if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
 #include <QtWidgets>
 #endif
@@ -18,10 +19,11 @@ static QString getLastErrorMsg() {
     LocalFree(bufPtr);
     return result;
 }
-class CopierWorker : public QThread { // only to be used by the Copier object
+
+class Copier : public QObject {
+   Q_OBJECT
    BOOL m_stop;
    QString m_src, m_dst;
-   QPointer<QObject> m_object;
    static DWORD CALLBACK copyProgress(
          LARGE_INTEGER totalSize, LARGE_INTEGER totalTransferred,
          LARGE_INTEGER streamSize, LARGE_INTEGER streamTransferred,
@@ -31,39 +33,29 @@ class CopierWorker : public QThread { // only to be used by the Copier object
       Q_UNUSED(streamSize) Q_UNUSED(streamTransferred)
       Q_UNUSED(streamNo) Q_UNUSED(callbackReason)
       Q_UNUSED(src) Q_UNUSED(dst)
-      auto object = static_cast<QObject*>(data);
+      auto self = static_cast<Copier*>(data);
       const auto text = QString("Transferred %1 of %2 bytes").
             arg(totalTransferred.QuadPart).arg(totalSize.QuadPart);
-      QMetaObject::invokeMethod(object, "newStatus", Qt::QueuedConnection,
-                                Q_ARG(QString, text));
+      emit self->newStatus(text);
       return PROGRESS_CONTINUE;
    }
-   void run() {
-      m_stop = FALSE;
-      auto rc = CopyFileExW((LPCWSTR)m_src.utf16(), (LPCWSTR)m_dst.utf16(),
-                            &copyProgress, m_object, &m_stop, 0);
-      if (!rc)
-         QMetaObject::invokeMethod(m_object, "newStatus", Qt::QueuedConnection,
-                                   Q_ARG(QString, getLastErrorMsg()));
-   }
-   CopierWorker(const QString & src, const QString & dst, QObject * obj) :
-      m_src{src}, m_dst{dst}, m_object{obj} {}
-   ~CopierWorker() { stop(); wait(); }
-   void stop() { m_stop = TRUE; }
-   friend class Copier;
-};
-
-class Copier : public QObject {
-   Q_OBJECT
-   CopierWorker m_worker;
 public:
-   Copier(const QString & src, const QString & dst) : m_worker{src, dst, this} {
-      connect(&m_worker, SIGNAL(finished()), SIGNAL(finished()));
-   }
+   Copier(const QString & src, const QString & dst, QObject * parent = nullptr) :
+      QObject{parent}, m_src{src}, m_dst{dst} {}
    Q_SIGNAL void newStatus(const QString &);
    Q_SIGNAL void finished();
-   Q_SLOT void stop() { m_worker.stop(); }
-   void copy() { m_worker.start(); }
+   Q_SLOT void stop() { m_stop = TRUE; }
+   void copy() {
+      QtConcurrent::run([this]{
+         m_stop = FALSE;
+         auto rc = CopyFileExW((LPCWSTR)m_src.utf16(), (LPCWSTR)m_dst.utf16(),
+                               &copyProgress, this, &m_stop, 0);
+         if (!rc)
+            emit newStatus(getLastErrorMsg());
+         emit finished();
+      });
+   }
+   ~Copier() { stop(); }
 };
 
 struct PathWidget : public QWidget {
@@ -94,15 +86,16 @@ class Ui : public QWidget {
 
    Q_SIGNAL void stopCopy();
    Q_SLOT void startCopy() {
-      auto copier = new Copier(m_src.edit.text(), m_dst.edit.text());
+      auto copier = new Copier(m_src.edit.text(), m_dst.edit.text(), this);
       connect(copier, SIGNAL(newStatus(QString)), &m_status, SLOT(setText(QString)));
       connect(copier, SIGNAL(finished()), SIGNAL(copyFinished()));
+      connect(copier, SIGNAL(finished()), copier, SLOT(deleteLater()));
       connect(this, SIGNAL(stopCopy()), copier, SLOT(stop()));
       copier->copy();
    }
    Q_SIGNAL void copyFinished();
 public:
-   explicit Ui(QWidget * parent = 0) : QWidget{parent} {
+   Ui() {
       m_layout.addRow("From:", &m_src);
       m_layout.addRow("To:", &m_dst);
       m_layout.addRow(&m_status);

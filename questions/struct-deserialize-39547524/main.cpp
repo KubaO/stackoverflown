@@ -2,11 +2,20 @@
 #include <QtCore>
 #include <string>
 
-struct Example {
+// Original API
+
+struct Example1 {
     int field1;
     double field2;
     bool field3;
     std::string field4;
+};
+
+// Type-Specific Adapter API
+
+template <typename T> struct GadgetTraits;
+
+struct Example1Gadget : Example1 {
     Q_GADGET
     Q_PROPERTY(int field1 MEMBER field1)
     Q_PROPERTY(double field2 MEMBER field2)
@@ -16,6 +25,9 @@ public:
     void setField4(const QString & val) { field4 = val.toStdString(); }
     QString getField4() const { return QString::fromStdString(field4); }
 };
+template <> struct GadgetTraits<Example1> { using gadget_type = Example1Gadget; };
+
+// Generic Adapter API
 
 template <typename T>
 void set(T & gadget, const QStringList & data)
@@ -26,7 +38,7 @@ void set(T & gadget, const QStringList & data)
 template <typename T>
 void set(T & gadget, const QString & data)
 {
-    const QMetaObject & mo = gadget.staticMetaObject;
+    const QMetaObject & mo = GadgetTraits<T>::gadget_type::staticMetaObject;
     auto const fields = data.split('=');
     if (fields.length() != 2) return;
     auto field = fields[0].trimmed();
@@ -38,7 +50,7 @@ void set(T & gadget, const QString & data)
 }
 
 int main() {
-    Example ex;
+    Example1 ex;
     set(ex, {"field1 = 3", "field2 = 1.5", "field3 = true", "field4 = foo bar"});
     Q_ASSERT(ex.field1 == 3);
     Q_ASSERT(ex.field2 == 1.5);

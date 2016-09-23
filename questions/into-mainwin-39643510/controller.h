@@ -12,6 +12,7 @@ class Controller : public QObject {
 public:
    explicit Controller(QObject * parent = nullptr);
    Q_SLOT void get();
+   Q_SIGNAL void busy();
    Q_SIGNAL void error(const QString &);
    Q_SIGNAL void values(const QString & name, const QString & gender, const QString & region);
 };

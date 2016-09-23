@@ -13,12 +13,11 @@ class MainWindow : public QWidget {
   QPushButton button{"Get Name"};
   QLineEdit * edits[3] = {&lineEditName, &lineEditGender, &lineEditRegion};
 public:
+  enum State { Normal, Loading, Error };
   explicit MainWindow(QWidget * parent = nullptr);
-  void setFields(const QString & name, const QString & gender, const QString & region);
-  void setAllFields(const QString & value);
+  Q_SLOT void setFields(const QString & name, const QString & gender, const QString & region);
+  Q_SLOT void setState(State);
   Q_SIGNAL void request();
-  Q_SLOT void disableButton() { button.setDisabled(true); }
-  Q_SLOT void enableButton() { button.setEnabled(true); }
 };
 
 #endif // MAINWINDOW_H

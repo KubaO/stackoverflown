@@ -28,5 +28,6 @@ void Controller::onReply(QNetworkReply * reply) {
 }
 
 void Controller::get() {
+   emit busy();
    manager.get(request);
 }

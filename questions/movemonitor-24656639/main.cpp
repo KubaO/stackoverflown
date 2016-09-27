@@ -1,37 +1,35 @@
-#include <QApplication>
-#include <QLabel>
-#include <QMoveEvent>
+#include <QtWidgets>
 
 class WindowMoveMonitor : public QObject
 {
    Q_OBJECT
-   bool eventFilter(QObject * target, QEvent * event) {
+   bool eventFilter(QObject * target, QEvent * event) override {
       if (event->type() == QEvent::Move) {
-         QMoveEvent * ev = static_cast<QMoveEvent*>(event);
-         emit windowMoved(ev->pos());
+         auto ev = static_cast<QMoveEvent*>(event);
+         emit moved(ev->pos());
       }
       return QObject::eventFilter(target, event);
    }
 public:
-   WindowMoveMonitor(QWidget * widget, QObject * parent = 0) : QObject(parent)
+   WindowMoveMonitor(QWidget * widget, QObject * parent = 0) : QObject{parent}
    {
       Q_ASSERT(widget->window());
       widget->window()->installEventFilter(this);
    }
-   Q_SIGNAL void windowMoved(const QPoint &);
+   Q_SIGNAL void moved(const QPoint &);
 };
 
 int main(int argc, char *argv[])
 {
-   QApplication a(argc, argv);
-   QLabel label("...");
-   WindowMoveMonitor monitor(&label);
-   QObject::connect(&monitor, &WindowMoveMonitor::windowMoved, [&label](const QPoint & p){
-      label.setText(QString("x:%1 y:%2").arg(p.x()).arg(p.y()));
+   QApplication app{argc, argv};
+   QLabel label{"..."};
+   WindowMoveMonitor monitor{&label};
+   QObject::connect(&monitor, &WindowMoveMonitor::moved, [&](const QPoint & p){
+      label.setText(QStringLiteral("x:%1 y:%2").arg(p.x()).arg(p.y()));
    });
    label.setMinimumSize(200, 50);
    label.show();
-   return a.exec();
+   return app.exec();
 }
 
 #include "main.moc"

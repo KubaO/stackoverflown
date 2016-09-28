@@ -43,18 +43,15 @@ using QOpenGLWidget = QGLWidget;
 
 // Don't code like this. It's silly.
 class MyGraphicsView : public QGraphicsView {
-   QOpenGLWidget * m_gl;
+   QOpenGLWidget * m_gl = new QOpenGLWidget;
 public:
-   MyGraphicsView(QWidget * parent = nullptr) :
-      QGraphicsView{parent},
-      m_gl{new QOpenGLWidget}
+   MyGraphicsView(QWidget * parent = nullptr) : QGraphicsView{parent}
    {
       setViewport(m_gl); // sets m_gl's parent
       Q_ASSERT(m_gl->parent());
    }
    ~MyGraphicsView() {
-      if (0) delete m_gl; // completely unnecessary
-      else Q_ASSERT(m_gl->parent()); // make sure ~QObject will delete the child
+      delete m_gl; // completely unnecessary
    }
 };
 

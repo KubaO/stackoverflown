@@ -1,9 +1,8 @@
-
 greaterThan(QT_MAJOR_VERSION, 4) {
-    QT = widgets 
+    QT = widgets
     CONFIG += c++11
 } else {
-    QT = gui 
+    QT = gui
     unix:QMAKE_CXXFLAGS += -std=c++11
     macx {
         QMAKE_CXXFLAGS += -stdlib=libc++

@@ -6,7 +6,7 @@
 #endif
 #include <array>
 
-//
+// Interface
 
 class ClockView : public QLabel
 {
@@ -35,7 +35,7 @@ private:
     std::array<QVBoxLayout, N> layouts;
 };
 
-//
+// Implementation
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent)
@@ -61,8 +61,8 @@ void MainWindow::populateViewGrid()
 
 int main(int argc, char** argv)
 {
-    QApplication a(argc, argv);
+    QApplication app{argc, argv};
     MainWindow w;
     w.show();
-    return a.exec();
+    return app.exec();
 }

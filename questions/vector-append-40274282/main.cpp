@@ -6,19 +6,8 @@
 #include <type_traits>
 #include <vector>
 
-struct A {
-   static int copies, moves;
-   A() {}
-   A(A&&) { moves++; }
-   A(const A&) { copies++; }
-   A& operator=(const A&) { copies++; return *this; }
-   static void reset() { A::copies = 0; A::moves = 0; }
-};
-int A::copies, A::moves;
-
 template<typename T>
-class rref_capture
-{
+class rref_capture {
    T* ptr;
 public:
    rref_capture(T&& x) : ptr(&x) {}
@@ -46,6 +35,16 @@ void append(std::vector<T> & v, U & u) {
    for (auto & item : u)
       v.push_back(item);
 }
+
+struct A {
+   static int copies, moves;
+   A() {}
+   A(A&&) { moves++; }
+   A(const A&) { copies++; }
+   A& operator=(const A&) { copies++; return *this; }
+   static void reset() { A::copies = 0; A::moves = 0; }
+};
+int A::copies, A::moves;
 
 int main() {
    std::vector<A> vec;

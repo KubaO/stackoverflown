@@ -80,25 +80,32 @@ public:
 };
 
 class Window : public QWidget {
+   Q_OBJECT
    QGridLayout m_layout{this};
    ListUi m_programs{"Liste des programmes"};
    ListUi m_sessions{"Liste des sessions"};
+   QPushButton m_generate{"Générer les données"};
    StandardItemModel m_model;
 public:
    explicit Window(QWidget * parent = nullptr) : QWidget{parent}
    {
       m_layout.addWidget(&m_programs, 0, 0);
       m_layout.addWidget(&m_sessions, 0, 1);
+      m_layout.addWidget(&m_generate, 1, 1, 1, 1, Qt::AlignRight);
       m_programs.setModel(&m_model);
-      m_sessions.setModel(&m_model);
       m_sessions.setDisabled(true);
       connect(&m_programs, &ListUi::currentIndexChanged, [this](const QModelIndex & root){
          m_sessions.setEnabled(true);
+         m_sessions.setModel(&m_model);
          m_sessions.setRootIndex(root);
       });
+      connect(&m_generate, &QPushButton::clicked, this, &Window::generateData);
    }
+   Q_SIGNAL void generateData();
    void setJson(const QJsonDocument & doc) {
       m_model.clear();
+      m_sessions.setModel(nullptr);
+      m_sessions.setDisabled(true);
       auto object = doc.object();
       for (auto it = object.begin(); it != object.end(); ++it) {
          if (!m_model.columnCount()) m_model.appendColumn({});
@@ -118,11 +125,11 @@ public:
 int main(int argc, char ** argv) {
    QApplication app{argc, argv};
    auto json = R"--({
-    "Foo":["Foo-1", "Foo-2", "Foo-3"],
-    "Bar":["Bar-1", "Bar-2"]
-    })--";
+               "Foo":["Foo-1", "Foo-2", "Foo-3"],
+               "Bar":["Bar-1", "Bar-2"]
+               })--";
    Window ui;
-   ui.setJson(QJsonDocument::fromJson(json));
+   ui.connect(&ui, &Window::generateData, [&]{ ui.setJson(QJsonDocument::fromJson(json)); });
    ui.show();
    return app.exec();
 }

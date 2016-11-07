@@ -30,20 +30,27 @@ class HexView : public QAbstractScrollArea {
     qreal xStep() const { return m_glyphRect.width(); }
     qreal yStep() const { return m_glyphRect.height(); }
     static QChar decode(char ch) { return CP437()[(uchar)ch]; }
-    void drawChar(const QPointF & pos, QChar ch, QColor color, QPainter & p) {
+    void drawChar(const QPointF & pos, QChar ch, QColor fg, QColor bg, QPainter & p) {
         auto & glyph = m_glyphs[ch];
         if (glyph.isNull()) {
             glyph = QImage{m_glyphRect.size().toSize(), QImage::Format_ARGB32_Premultiplied};
-            glyph.fill(Qt::white);
+            glyph.fill(Qt::transparent);
             QPainter p{&glyph};
-            p.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+            p.setPen(Qt::white);
             p.setFont(m_font);
             p.drawText(m_glyphPos, {ch});
         }
+        QImage composite = glyph;
+        {
+            QPainter p{&composite};
+            p.setCompositionMode(QPainter::CompositionMode_SourceOut);
+            p.fillRect(composite.rect(), bg);
+            p.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+            p.fillRect(composite.rect(), fg);
+        }
         auto rect = m_glyphRect;
         rect.moveTo(pos);
-        p.fillRect(rect, color);
-        p.drawImage(pos, glyph);
+        p.drawImage(pos, composite);
     }
     void initData() {
         qreal width = viewport()->width() - m_addressChars*xStep() - m_dataMargin;
@@ -67,13 +74,13 @@ class HexView : public QAbstractScrollArea {
             auto rawAddress = QString::number(m_start + offset, 16);
             auto address = QString{m_addressChars-rawAddress.size(), ' '} + rawAddress;
             for (auto c : address) {
-                drawChar(pos, c, Qt::black, p);
+                drawChar(pos, c, Qt::black, Qt::white, p);
                 pos += step;
             }
             pos += QPointF{m_dataMargin, 0.};
             auto bytes = std::min(m_size - offset, (size_t)m_chars);
             for (int n = bytes; n; n--) {
-                drawChar(pos, decode(m_data[m_start + offset++]), Qt::red, p);
+                drawChar(pos, decode(m_data[m_start + offset++]), Qt::red, Qt::white, p);
                 pos += step;
             }
             pos = QPointF{0., pos.y() + yStep()};

@@ -25,29 +25,25 @@ class HexView : public QAbstractScrollArea {
     QRectF m_glyphRect{0.,0.,1.,1.};
     QPointF m_glyphPos;
     int m_chars, m_lines;
-    QMap<QChar, QPixmap> m_cache;
+    QMap<QChar, QImage> m_glyphs;
     QFont m_font{"Monaco"};
     qreal xStep() const { return m_glyphRect.width(); }
     qreal yStep() const { return m_glyphRect.height(); }
     static QChar decode(char ch) { return CP437()[(uchar)ch]; }
     void drawChar(const QPointF & pos, QChar ch, QColor color, QPainter & p) {
-        auto & glyph = m_cache[ch];
+        auto & glyph = m_glyphs[ch];
         if (glyph.isNull()) {
-            glyph = QPixmap{m_glyphRect.size().toSize()};
-            glyph.fill(Qt::transparent);
+            glyph = QImage{m_glyphRect.size().toSize(), QImage::Format_ARGB32_Premultiplied};
+            glyph.fill(Qt::white);
             QPainter p{&glyph};
-            p.setPen(Qt::black);
+            p.setCompositionMode(QPainter::CompositionMode_DestinationOut);
             p.setFont(m_font);
             p.drawText(m_glyphPos, {ch});
         }
         auto rect = m_glyphRect;
         rect.moveTo(pos);
-        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-        p.drawPixmap(pos, glyph);
-        if (color != Qt::black) {
-            p.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            p.fillRect(rect, color);
-        }
+        p.fillRect(rect, color);
+        p.drawImage(pos, glyph);
     }
     void initData() {
         qreal width = viewport()->width() - m_addressChars*xStep() - m_dataMargin;
@@ -64,10 +60,6 @@ class HexView : public QAbstractScrollArea {
         QPainter p{viewport()};
         QPointF pos;
         QPointF step{xStep(), 0.};
-        p.setCompositionMode(QPainter::CompositionMode_Source);
-        p.fillRect(viewport()->rect(), Qt::transparent);
-        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-        p.setFont(m_font);
         auto dividerX = m_addressChars*xStep() + m_dataMargin/2.;
         p.drawLine(dividerX, 0, dividerX, viewport()->height());
         int offset = 0;
@@ -86,8 +78,6 @@ class HexView : public QAbstractScrollArea {
             }
             pos = QPointF{0., pos.y() + yStep()};
         }
-        p.setCompositionMode(QPainter::CompositionMode_DestinationAtop);
-        p.fillRect(viewport()->rect(), Qt::white);
     }
     void resizeEvent(QResizeEvent *) override {
         initData();
@@ -101,7 +91,6 @@ public:
     HexView(const char * data, size_t size, QWidget * parent = nullptr) :
         QAbstractScrollArea{parent}, m_data(data), m_size(size)
     {
-        viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
         auto fm = QFontMetrics(m_font);
         for (int i = 0x20; i < 0xE0; ++i)
             m_glyphRect = m_glyphRect.united(fm.boundingRect(CP437()[i]));

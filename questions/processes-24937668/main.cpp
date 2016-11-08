@@ -1,26 +1,13 @@
-#include <QApplication>
-#include <QSpinBox>
-#include <QPointer>
-#include <QBasicTimer>
-#include <QProcess>
-#include <QDateTime>
-#include <QThread>
-#include <QWidget>
-#include <QFormLayout>
-#include <QCheckBox>
-#include <QLabel>
-#include <QDataWidgetMapper>
-#include <QAbstractListModel>
-#include <QDebug>
+#include <QtWidgets>
 #include <list>
 
 /// Removes \a n elements from the container, preferably if \a pred is true.
 template <class Container, class Pred>
 void remove_n_preferably_if(Container & data, int n, Pred pred) {
     int left = data.size();
-    for (typename Container::iterator i = data.begin(), e = data.end(); n > 0 && i != e;) {
+    for (auto i = data.begin(), e = data.end(); n > 0 && i != e;) {
         if (left == n || pred(*i)) {
-            typename Container::iterator j = std::next(i);
+            auto j = std::next(i);
             -- left, -- n;
             for (; n > 0 && j != e && (left == n || pred(*j)); --left, --n, ++j);
             i = data.erase(i, j);
@@ -77,9 +64,9 @@ public:
 
 class Master : public QAbstractListModel {
     Q_OBJECT
-    int m_activeProcessCount;
+    int m_activeProcessCount = 0;
     std::list<QProcess> m_processes;
-    bool m_autoStart;
+    bool m_autoStart = false;
     void notifyRowChange(int row) { emit dataChanged(index(row), index(row)); }
     Q_SLOT void started() {
         ++ m_activeProcessCount;
@@ -92,7 +79,7 @@ class Master : public QAbstractListModel {
         Q_ASSERT(m_activeProcessCount >= 0);
     }
     void start(QProcess & process) {
-        if (process.state() == QProcess::NotRunning) process.start(qApp->applicationFilePath(), QStringList("--slave"));
+        if (process.state() == QProcess::NotRunning) process.start(qApp->applicationFilePath(), {"--slave"});
     }
     void startAll() {
         for (auto & process : m_processes) start(process);
@@ -106,7 +93,7 @@ class Master : public QAbstractListModel {
     }
 public:
     enum { RowActiveProcessCount, RowMaxProcessCount, RowAutoStart, RowEnd };
-    Master(QObject *parent = 0) : QAbstractListModel(parent), m_activeProcessCount(0), m_autoStart(false) {
+    Master(QObject *parent = nullptr) : QAbstractListModel{parent} {
         setMaxProcessCount(QThread::idealThreadCount());
     }
     int rowCount(const QModelIndex &) const Q_DECL_OVERRIDE { return RowEnd; }
@@ -146,13 +133,13 @@ public:
 };
 
 class MasterView : public QWidget {
-    QFormLayout m_layout;
+    QFormLayout m_layout{this};
     QLabel m_active;
     QSpinBox m_max;
     QCheckBox m_run;
     QDataWidgetMapper m_mapper;
 public:
-    MasterView(QWidget * parent = 0) : QWidget(parent), m_layout(this) {
+    MasterView(QWidget * parent = nullptr) : QWidget{parent} {
         m_layout.addRow("Active Process Count", &m_active);
         m_layout.addRow("Maximum # of Processes", &m_max);
         m_layout.addRow("Run Processes", &m_run);
@@ -179,12 +166,12 @@ bool argvContains(int argc, char ** argv, const char * needle)
 int main(int argc, char *argv[])
 {
     if (argvContains(argc, argv, "--slave")) {
-        QCoreApplication app(argc, argv);
+        QCoreApplication app{argc, argv};
         qsrand(QDateTime::currentMSecsSinceEpoch());
         Slave slave;
         return app.exec();
     }
-    QApplication app(argc, argv);
+    QApplication app{argc, argv};
     Master master;
     MasterView view;
     view.setSource(&master);

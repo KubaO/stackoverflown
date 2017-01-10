@@ -1,3 +1,4 @@
+// https://github.com/KubaO/stackoverflown/tree/master/questions/serial-test-32331713
 #include <QtWidgets>
 
 /// A thread that gives itself a bit of time to finish up, and then terminates.
@@ -6,13 +7,13 @@ class Thread : public QThread {
    Q_PROPERTY (int shutdownTimeout MEMBER m_shutdownTimeout)
    int m_shutdownTimeout { 1000 }; ///< in milliseconds
    QBasicTimer m_shutdownTimer;
-   void timerEvent(QTimerEvent * ev) {
+   void timerEvent(QTimerEvent * ev) override {
       if (ev->timerId() == m_shutdownTimer.timerId()) {
          if (! isFinished()) terminate();
       }
       QThread::timerEvent(ev);
    }
-   bool event(QEvent *event) {
+   bool event(QEvent *event) override {
       if (event->type() == QEvent::ThreadChange)
          QCoreApplication::postEvent(this, new QEvent(QEvent::None));
       else if (event->type() == QEvent::None && thread() == currentThread())
@@ -36,10 +37,10 @@ public:
       quit();                // should break the event loop if there is one
    }
    ~Thread() {
-      Q_ASSERT(thread() != QThread::currentThread());
+      Q_ASSERT(!thread() || thread() == QThread::currentThread());
       stop();
       wait(50);
-      terminate();
+      if (isRunning()) terminate();
       wait();
    }
 };
@@ -48,7 +49,7 @@ class LazyThread : public Thread {
    Q_OBJECT
    Q_PROPERTY(bool getStuck MEMBER m_getStuck)
    bool m_getStuck { false };
-   void run() {
+   void run() override {
       while (!isInterruptionRequested()) {
          msleep(100); // pretend that we're busy
       }
@@ -74,7 +75,7 @@ class CloseThreadStopper : public QObject {
       m_threads.remove(thread);
       if (m_threads.isEmpty()) emit canClose();
    }
-   bool eventFilter(QObject *, QEvent * ev) {
+   bool eventFilter(QObject *, QEvent * ev) override {
       if (ev->type() == QEvent::Close) {
          bool close = true;
          for (auto thread : m_threads) {
@@ -156,6 +157,135 @@ int main(int argc, char *argv[])
    sm.start();
    ui.show();
    return a.exec();
+}
+
+//#include "main.moc"
+#include <QSerialPort>
+
+class CommThread : public Thread {
+   Q_OBJECT
+public:
+   enum class Request { Disconnect };
+private:
+   QMutex m_mutex;
+   QQueue<Request> m_requests;
+   //...
+   void run() override;
+};
+
+void CommThread::run()
+{
+   QString portname;
+   QSerialPort port;
+
+   port.setPortName(portname);
+   port.setBaudRate(QSerialPort::Baud115200);
+
+   if (!port.open(QIODevice::ReadWrite)){
+      qWarning() << "Error opening Serial port within thread";
+      return;
+   }
+
+   while (! isInterruptionRequested()) {
+      QMutexLocker lock(&m_mutex);
+      if (! m_requests.isEmpty()) {
+         auto request = m_requests.dequeue();
+         lock.unlock();
+         if (request == Request::Disconnect) {
+            qDebug() << "Entering disconnect sequence";
+            QByteArray data;
+            port.write(data);
+            port.flush();
+         }
+         //...
+      }
+      lock.unlock();
+
+      // The loop must run every 100ms to check for new requests
+      if (port.waitForReadyRead(100)) {
+         if (port.canReadLine()) {
+            //...
+         }
+         QMutexLocker lock(&m_mutex);
+         // Do something to a shared data structure
+      }
+
+      qDebug() << "The thread is exiting";
+   }
+}
+
+//
+
+namespace {
+template <typename F>
+static void postTo(QObject * obj, F && fun) {
+   QObject signalSource;
+   QObject::connect(&signalSource, &QObject::destroyed, obj, std::forward<F>(fun),
+                    Qt::QueuedConnection);
+}
+}
+
+class CommObject : public QObject {
+   Q_OBJECT
+   Q_PROPERTY(QImage image READ image NOTIFY imageChanged)
+   mutable QMutex m_imageMutex;
+   QImage m_image;
+   QByteArray m_data;
+   QString m_portName;
+   QSerialPort m_port { this };
+   void onData() {
+      if (m_port.canReadLine()) {
+         // process the line
+      }
+      QMutexLocker lock(&m_imageMutex);
+      // Do something to the image
+      emit imageChanged(m_image);
+   }
+public:
+   /// Thread-safe
+   Q_SLOT void disconnect() {
+      postTo(this, [this]{
+         qDebug() << "Entering disconnect sequence";
+         m_port.write(m_data);
+         m_port.flush();
+      });
+   }
+   /// Thread-safe
+   Q_SLOT void open() {
+      postTo(this, [this]{
+         m_port.setPortName(m_portName);
+         m_port.setBaudRate(QSerialPort::Baud115200);
+         if (!m_port.open(QIODevice::ReadWrite)){
+            qWarning() << "Error opening the port";
+            emit openFailed();
+         } else {
+            emit opened();
+         }
+      });
+   }
+   Q_SIGNAL void opened();
+   Q_SIGNAL void openFailed();
+   Q_SIGNAL void imageChanged(const QImage &);
+   CommObject(QObject * parent = 0) : QObject(parent) {
+      open();
+      connect(&m_port, &QIODevice::readyRead, this, &CommObject::onData);
+   }
+   QImage image() const {
+      QMutexLocker lock(&m_imageMutex);
+      return m_image;
+   }
+};
+
+#define main main1
+
+int main(...) {
+  //...
+  Thread thread;
+  thread.start();
+  QScopedPointer<CommObject> comm(new CommObject);
+  comm->moveToThread(&thread);
+  QObject::connect(&thread, &Thread::stopping, comm.take(), &QObject::deleteLater);
+  //...
 }
 
 #include "main.moc"

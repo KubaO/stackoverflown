@@ -1,13 +1,79 @@
+#define SOL1 // 0..6
+
+#ifdef SOL0
+#define STANDALONE
+#include <QtCore>
+#include <type_traits>
+
+// Qt 5/4 - preferred, has least allocations
+template <typename F>
+static void postToThread(F && fun, QObject * obj = qApp) {
+   struct Event : public QEvent {
+      using Fun = typename std::decay<F>::type;
+      Fun fun;
+      Event(Fun && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
+      Event(const Fun & fun) : QEvent(QEvent::None), fun(fun) {}
+      ~Event() { fun(); }
+   };
+   QCoreApplication::postEvent(obj, new Event(std::forward<F>(fun)));
+}
+
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+// Qt 5 - alternative version
+template <typename F>
+static void postToThread2(F && fun, QObject * obj = qApp) {
+   QObject src;
+   QObject::connect(&src, &QObject::destroyed, obj, std::forward<F>(fun),
+                    Qt::QueuedConnection);
+}
+#endif
+
+void test1() {
+   QThread t;
+   QObject o;
+   o.moveToThread(&t);
+
+   // Execute in given object's thread
+   postToThread([&]{ o.setObjectName("hello"); }, &o);
+   // or
+   postToThread(std::bind(&QObject::setObjectName, &o, "hello"), &o);
+
+   // Execute in the main thread
+   postToThread([]{ qDebug() << "hello"; });
+}
+
+// Qt 5/4
+template <typename T, typename R>
+static void postToThread(T * obj, R(T::* method)()) {
+   struct Event : public QEvent {
+      T * obj;
+      R(T::* method)();
+      Event(T * obj, R(T::*method)()):
+         QEvent(QEvent::None), obj(obj), method(method) {}
+      ~Event() { (obj->*method)(); }
+   };
+   QCoreApplication::postEvent(obj, new Event(obj, method));
+}
+
+void test2() {
+   QThread t;
+   struct MyObject : QObject { void method() {} } obj;
+   obj.moveToThread(&t);
+
+   // Execute in obj's thread
+   postToThread(&obj, &MyObject::method);
+}
+
+int main(int argc, char ** argv) {
+}
+
+#endif
+
 //
 // Qt 4/5 Solution Using a Custom Event and Consumer
 //
-#if 0
-#include <QCoreApplication>
-#include <QThread>
-#include <QEvent>
-#include <QMap>
-#include <QMutex>
-#include <QDebug>
+#ifdef SOL1
+#include <QtCore>
 #include <functional>
 
 class FunctorCallEvent : public QEvent {
@@ -16,7 +82,7 @@ public:
    FunctorCallEvent(const std::function<void()> & fun, QObject *) :
       QEvent(QEvent::None), m_fun(fun) {}
    FunctorCallEvent(std::function<void()> && fun, QObject *) :
-      QEvent(QEvent::None), m_fun(fun) { qDebug() << "move semantics"; }
+      QEvent(QEvent::None), m_fun(std::move(fun)) { qDebug() << "move semantics"; }
    void call() { m_fun(); }
 };
 
@@ -71,7 +137,7 @@ public:
    }
 };
 
-QObject * FunctorCallConsumer::m_appThreadObject = nullptr;
+QObject * FunctorCallConsumer::m_appThreadObject;
 QMutex FunctorCallConsumer::m_threadObjectMutex;
 FunctorCallConsumer::Map FunctorCallConsumer::m_threadObjects;
 // Common Code follows here
@@ -80,14 +146,9 @@ FunctorCallConsumer::Map FunctorCallConsumer::m_threadObjects;
 //
 // Qt 4/5 Solution Using a Custom Event and Consumer for Main Thread Only
 //
-#if 0
+#ifdef SOL2
 #define STANDALONE
-#include <QCoreApplication>
-#include <QThread>
-#include <QEvent>
-#include <QMap>
-#include <QMutex>
-#include <QDebug>
+#include <QtCore>
 #include <functional>
 
 class FunctorCallEvent : public QEvent {
@@ -96,7 +157,7 @@ public:
    FunctorCallEvent(const std::function<void()> & fun) :
       QEvent(QEvent::None), m_fun(fun) {}
    FunctorCallEvent(std::function<void()> && fun) :
-      QEvent(QEvent::None), m_fun(fun) {}
+      QEvent(QEvent::None), m_fun(std::move(fun)) {}
    void call() { m_fun(); }
 };
 
@@ -120,13 +181,14 @@ public:
       QMutexLocker lock(&m_threadObjectMutex);
       if (! m_appThreadObject) {
             m_appThreadObject = new FunctorCallConsumer;
+            m_appThreadObject->moveToThread(qApp->thread());
             qAddPostRoutine(&deleteAppThreadObject);
          }
       return m_appThreadObject;
    }
 };
 
-FunctorCallConsumer * FunctorCallConsumer::m_appThreadObject = nullptr;
+FunctorCallConsumer * FunctorCallConsumer::m_appThreadObject;
 QMutex FunctorCallConsumer::m_threadObjectMutex;
 
 void postToMainThread(const std::function<void()> & fun) {
@@ -166,12 +228,8 @@ int main(int argc, char *argv[])
 //
 // Qt 4/5 Solution Using QEvent Destructor
 //
-#if 0
-#include <QCoreApplication>
-#include <QThread>
-#include <QEvent>
-#include <QAbstractEventDispatcher>
-#include <QDebug>
+#ifdef SOL3
+#include <QtCore>
 #include <functional>
 
 class FunctorCallEvent : public QEvent {
@@ -195,20 +253,17 @@ public:
 //
 // Qt 5 Solution Using the Private QMetaCallEvent
 //
-#if 0
-#include <QCoreApplication>
-#include <QThread>
-#include <QAbstractEventDispatcher>
-#include <QDebug>
+#ifdef SOL4
+#include <QtCore>
 #include <private/qobject_p.h>
 #include <functional>
 
 class FunctorCallEvent : public QMetaCallEvent {
 public:
    template <typename Functor>
-   FunctorCallEvent(const Functor & fun, QObject * receiver) :
-      QMetaCallEvent(new QtPrivate::QFunctorSlotObject<Functor, 0, typename QtPrivate::List_Left<void, 0>::Value, void>(fun),
-                     receiver, 0, 0, 0, (void**)malloc(sizeof(void*))) {}
+   FunctorCallEvent(Functor && fun, QObject * receiver) :
+      QMetaCallEvent(new QtPrivate::QFunctorSlotObject<Functor, 0, typename QtPrivate::List_Left<void, 0>::Value, void>
+                     (std::forward<Functor>(fun)), receiver, 0, 0, 0, (void**)malloc(sizeof(void*))) {}
    // Metacalls with slot objects require an argument array for the return type, even if it's void.
 };
 // Common Code follows here
@@ -217,11 +272,8 @@ public:
 //
 // Qt 5 Solution Using a Temporary Object as The Signal Source
 //
-#if 1
-#include <QCoreApplication>
-#include <QThread>
-#include <QAbstractEventDispatcher>
-#include <QDebug>
+#ifdef SOL5
+#include <QtCore>
 #include <functional>
 
 namespace FunctorCallConsumer { QObject * forThread(QThread*); }
@@ -232,7 +284,62 @@ void postMetaCall(QThread * thread, const std::function<void()> & fun) {
    QObject::connect(&signalSource, &QObject::destroyed,
                     FunctorCallConsumer::forThread(thread), [=](QObject*){ fun(); });
 }
+#ifdef __cpp_init_captures
+void postMetaCall(QThread * thread, std::function<void()> && fun) {
+   QObject signalSource;
+   QObject::connect(&signalSource, &QObject::destroyed,
+                    FunctorCallConsumer::forThread(thread), [fun(std::move(fun))](QObject*){ fun(); });
+}
+#endif
 // Common Code follows here
+#endif
+
+//
+// Qt 5 Solution Using a Temporary Object as The Signal Source for the Main Thread Only
+//
+#ifdef SOL6
+#define STANDALONE
+#include <QtCore>
+#include <functional>
+
+void postToMainThread(const std::function<void()> & fun) {
+  QObject signalSource;
+  QObject::connect(&signalSource, &QObject::destroyed, qApp, [=](QObject*){
+    fun();
+  });
+}
+
+#ifdef __cpp_init_captures
+void postToMainThread(std::function<void()> && fun) {
+  QObject signalSource;
+  QObject::connect(&signalSource, &QObject::destroyed, qApp, [fun(std::move(fun))](QObject*){
+    fun();
+  });
+}
+#endif
+
+class Worker : public QThread {
+   void run() {
+      postToMainThread([]{
+         qDebug() << "worker functor executes in thread" << QThread::currentThread();
+      });
+   }
+public:
+   ~Worker() { quit(); wait(); }
+};
+
+int main(int argc, char *argv[])
+{
+   QCoreApplication a(argc, argv);
+   a.thread()->setObjectName("main");
+   Worker worker;
+   worker.setObjectName("worker");
+   qDebug() << "worker thread:" << &worker;
+   qDebug() << "main thread:" << QThread::currentThread();
+   worker.start();
+   a.connect(&worker, SIGNAL(finished()), SLOT(quit()));
+   return a.exec();
+}
 #endif
 
 //

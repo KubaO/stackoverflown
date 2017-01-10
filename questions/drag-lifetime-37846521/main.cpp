@@ -4,7 +4,8 @@
 template <typename F>
 static void postToThread(F && fun, QObject * obj = qApp) {
    QObject src;
-   QObject::connect(&src, &QObject::destroyed, obj, std::move(fun), Qt::QueuedConnection);
+   QObject::connect(&src, &QObject::destroyed, obj, std::forward<F>(fun),
+                    Qt::QueuedConnection);
 }
 
 struct MyListWidget : QListWidget {

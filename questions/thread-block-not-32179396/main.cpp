@@ -1,4 +1,6 @@
-#if 1
+#define SOL1 // 1..3
+
+#ifdef SOL1
 #include <QtWidgets>
 
 class MyProcessor : public QObject {
@@ -46,9 +48,9 @@ int main(int argc, char ** argv) {
 #include "main.moc"
 #endif
 
-#if 0
-#include <QtWidgets>
+#ifdef SOL2
 // USE ONLY IF MyProcessor PROPERTIES HAVE NO CHANGE NOTIFIERS
+#include <QtWidgets>
 
 class MyProcessor : public QObject {
   Q_OBJECT
@@ -64,13 +66,13 @@ public:
   int value() const { return m_value; }
 };
 
-// See http://stackoverflow.com/a/21653558/1329652 for discussion of postTo
+// See http://stackoverflow.com/a/21653558/1329652
 template <typename F>
 void postTo(QObject * obj, F && fun) {
   if (!obj) return;
   if (obj->thread() != QThread::currentThread()) {
     QObject signalSource;
-    QObject::connect(&signalSource, &QObject::destroyed, obj, std::move(fun));
+    QObject::connect(&signalSource, &QObject::destroyed, obj, std::forward<F>(fun));
   } else
     fun();
 }
@@ -114,7 +116,7 @@ int main(int argc, char ** argv) {
 #include "main.moc"
 #endif
 
-#if 0
+#ifdef SOL3
 // DO NOT USE THIS CODE IN PRODUCTION!
 // THIS IS A HORRIBLE USABILITY BUG
 // ONLY USE FOR DEBUGGING!!

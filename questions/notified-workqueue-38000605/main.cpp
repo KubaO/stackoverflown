@@ -1,5 +1,6 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/notified-workqueue-38000605
 #include <QtCore>
+#include <type_traits>
 
 class WorkUnit;
 class WorkQueue : public QObject {
@@ -54,7 +55,7 @@ void WorkQueue::addWork(WorkUnit *unit) {
 }
 
 template <typename F> void WorkQueue::addFunctor(F && functor) {
-   addWork(new FunctorUnit<F>{std::forward<F>(functor)});
+   addWork(new FunctorUnit<typename std::decay<F>::type>{std::forward<F>(functor)});
 }
 
 #include <random>

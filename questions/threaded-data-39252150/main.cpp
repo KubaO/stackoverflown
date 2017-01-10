@@ -60,6 +60,10 @@ class GuiClassVal : public QWidget {
     void setData(MyData && data) {
         QCoreApplication::postEvent(this, new DataEvent{std::move(data)});
     }
+    /// This method is thread-safe.
+    void setData(const MyData & data) {
+        QCoreApplication::postEvent(this, new DataEvent{data});
+    }
     bool event(QEvent *event) override {
         if (event->type() == DataEvent::type) {
             data.~MyData();

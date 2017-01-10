@@ -1,5 +1,6 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/worker-timer-40369716
 #include <QtCore>
+#include <type_traits>
 
 // See http://stackoverflow.com/q/40382820/1329652
 template <typename Fun> void safe(QObject * obj, Fun && fun) {
@@ -7,11 +8,14 @@ template <typename Fun> void safe(QObject * obj, Fun && fun) {
     if (Q_LIKELY(obj->thread() == QThread::currentThread()))
         return fun();
     struct Event : public QEvent {
-      Fun fun;
-      Event(Fun && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
+      using F = typename std::decay<Fun>::type;
+      F fun;
+      Event(F && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
+      Event(const F & fun) : QEvent(QEvent::None), fun(fun) {}
       ~Event() { fun(); }
     };
-    QCoreApplication::postEvent(obj->thread() ? obj : qApp, new Event(std::move(fun)));
+    QCoreApplication::postEvent(
+          obj->thread() ? obj : qApp, new Event(std::forward<Fun>(fun)));
 }
 
 class WorkerBase : public QObject {

@@ -1,17 +1,20 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/twothreads-41044526
 #include <QtCore>
 
-// see http://stackoverflow.com/questions/40382820/how-to-leverage-qt-to-make-a-qobject-method-thread-safe
+// see http://stackoverflow.com/questions/40382820
 template <typename Fun> void safe(QObject * obj, Fun && fun) {
     Q_ASSERT(obj->thread() || qApp && qApp->thread() == QThread::currentThread());
     if (Q_LIKELY(obj->thread() == QThread::currentThread()))
         return fun();
     struct Event : public QEvent {
-      Fun fun;
-      Event(Fun && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
+      using F = typename std::decay<Fun>::type;
+      F fun;
+      Event(F && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
+      Event(const F & fun) : QEvent(QEvent::None), fun(fun) {}
       ~Event() { fun(); }
     };
-    QCoreApplication::postEvent(obj->thread() ? obj : qApp, new Event(std::move(fun)));
+    QCoreApplication::postEvent(
+          obj->thread() ? obj : qApp, new Event(std::forward<Fun>(fun)));
 }
 
 class Worker : public QObject {

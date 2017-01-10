@@ -1,3 +1,4 @@
+// https://github.com/KubaO/stackoverflown/tree/master/questions/graphics-transform-32186798
 #include <QtWidgets>
 
 struct Controller {
@@ -11,11 +12,11 @@ public:
       grid.addWidget(&xScale, 0, col + 1);
       grid.addWidget(&yScale, 0, col + 2);
    }
-   template <typename F> void connect(F f) { connect(f, f, std::move(f)); }
+   template <typename F> void connect(F && f) { connect(f, f, std::forward<F>(f)); }
    template <typename Fa, typename Fx, typename Fy> void connect(Fa && a, Fx && x, Fy && y) {
-      QObject::connect(&angle, &QSlider::valueChanged, std::move(a));
-      QObject::connect(&xScale, &QSlider::valueChanged, std::move(x));
-      QObject::connect(&yScale, &QSlider::valueChanged, std::move(y));
+      QObject::connect(&angle, &QSlider::valueChanged, std::forward<Fa>(a));
+      QObject::connect(&xScale, &QSlider::valueChanged, std::forward<Fx>(x));
+      QObject::connect(&yScale, &QSlider::valueChanged, std::forward<Fy>(y));
    }
    QTransform xform(QPointF xlate) {
       QTransform t;

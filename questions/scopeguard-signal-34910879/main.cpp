@@ -8,7 +8,7 @@ public:
    Q_SIGNAL void inScope(bool);
    template <typename F>
    ScopeSignaller(QObject * target, F && slot, QObject * parent = 0) : QObject(parent) {
-      connect(this, &ScopeSignaller::inScope, target, std::move(slot));
+      connect(this, &ScopeSignaller::inScope, target, std::forward<F>(slot));
       inScope(true);
    }
    ~ScopeSignaller() {

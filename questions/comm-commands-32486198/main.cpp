@@ -1,6 +1,7 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/comm-commands-32486198
 #include <QtWidgets>
 #include <private/qringbuffer_p.h>
+#include <type_traits>
 
 // See http://stackoverflow.com/a/32317276/1329652
 /// A simple point-to-point intra-process pipe. The other endpoint can live in any
@@ -64,12 +65,15 @@ protected:
 public:
    GuardedSignalTransition(const QObject * sender, const char * signal, F && guard) :
       QSignalTransition(sender, signal), m_guard(std::move(guard)) {}
+   GuardedSignalTransition(const QObject * sender, const char * signal, const F & guard) :
+      QSignalTransition(sender, signal), m_guard(guard) {}
 };
 
 template <typename F> static GuardedSignalTransition<F> *
 addTransition(QState * src, QAbstractState *target,
               const QObject * sender, const char * signal, F && guard) {
-   auto t = new GuardedSignalTransition<F>(sender, signal, std::move(guard));
+   auto t = new GuardedSignalTransition<typename std::decay<F>::type>
+         (sender, signal, std::forward<F>(guard));
    t->setTargetState(target);
    src->addTransition(t);
    return t;

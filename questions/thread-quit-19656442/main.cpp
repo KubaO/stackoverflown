@@ -1,6 +1,5 @@
-#include <QThread>
-#include <QPointer>
-#include <QCoreApplication>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/thread-quit-19656442
+#include <QtCore>
 
 class Thread : public QThread {
    using QThread::run; // final

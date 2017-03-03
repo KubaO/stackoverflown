@@ -1,4 +1,5 @@
 #if 0
+// https://github.com/KubaO/stackoverflown/tree/master/questions/widget-parent-28992276
 #include <QApplication>
 #include <QLabel>
 
@@ -26,7 +27,6 @@ int main(int argc, char ** argv) {
 #else
 #include <QApplication>
 #include <QLabel>
-#include <cstdint>
 
 int main(int argc, char ** argv) {
    QApplication app{argc, argv};
@@ -37,7 +37,7 @@ int main(int argc, char ** argv) {
       label->setParent(&parent);
       label->setWindowFlags(Qt::Window);
       label->setText(QString("%1 Parent: %2.").
-                     arg(label->text()).arg((uintptr_t)label->parent(), 0, 16));
+                     arg(label->text()).arg((quintptr)label->parent(), 0, 16));
       label->show();
    }
    l2.setAttribute(Qt::WA_QuitOnClose, false);

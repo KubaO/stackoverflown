@@ -7,8 +7,14 @@ encourage:
 * experimentation, and
 * posing and answering SO code questions with self-contained, valid, compileable examples.
 
-Link or copy each of the folders here to your creator's `shared/templates/wizards`
-(Windows/Linux) or `Resources/templates/wizards` (OS X, within the app bundle).
+To install the templates:
+
+1. Locate the installation folder of Qt Creator, and there the following folder:
+
+ * `shared/templates/wizards` on Windows and Unix,
+ * `Resources/templates/wizards` on OS X, within the app bundle.
+
+2. Link or copy each of the folders here to the folder above.
 
 ### LICENSE
 

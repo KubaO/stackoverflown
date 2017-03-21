@@ -1,30 +1,14 @@
-#include <QMainWindow>
-#include <QDockWidget>
-#include <QLineEdit>
-#include <QToolButton>
-#include <QApplication>
-#include <QGridLayout>
-#include <QKeyEvent>
-#include <QDebug>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/vkb-focus-18558664
+#include <QtGui>
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#include <QtWidgets>
+#endif
 
 class Keyboard : public QDockWidget {
    Q_OBJECT
-   void init() {
-      auto w = new QWidget;
-      auto l = new QGridLayout(w);
-      for (int i = 0; i < 10; ++ i) {
-         auto btn = new QToolButton;
-         btn->setText(QString::number(i));
-         btn->setProperty("key", Qt::Key_0 + i);
-         l->addWidget(btn, 0, i, 1, 1);
-         connect(btn, SIGNAL(clicked()), SLOT(clicked()));
-      }
-      setWidget(w);
-      setFeatures(QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetMovable);
-      for (auto o : widget()->children()) {
-         if (o->isWidgetType()) static_cast<QWidget*>(o)->setFocusPolicy(Qt::NoFocus);
-      }
-   }
+   QWidget m_widget;
+   QGridLayout m_layout{&m_widget};
+   QToolButton m_buttons[10];
    void sendKey(Qt::Key key, Qt::KeyboardModifier mod)
    {
       if (! parentWidget()) return;
@@ -43,9 +27,22 @@ class Keyboard : public QDockWidget {
       if (key.isValid()) sendKey((Qt::Key)key.toInt(), Qt::NoModifier);
    }
 public:
-   Keyboard(const QString & title, QWidget *parent = 0) :
-      QDockWidget(title, parent) { init(); }
-   explicit Keyboard(QWidget *parent = 0) : QDockWidget(parent) { init(); }
+   explicit Keyboard(const QString & title, QWidget *parent = nullptr) : Keyboard(parent) {
+      setWindowTitle(title);
+   }
+   explicit Keyboard(QWidget *parent = nullptr) : QDockWidget(parent) {
+      int i{};
+      for (auto & btn : m_buttons) {
+         btn.setText(QString::number(i));
+         btn.setProperty("key", Qt::Key_0 + i);
+         m_layout.addWidget(&btn, 0, i, 1, 1);
+         connect(&btn, SIGNAL(clicked()), SLOT(clicked()));
+         btn.setFocusPolicy(Qt::NoFocus);
+         ++i;
+      }
+      setWidget(&m_widget);
+      setFeatures(QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetMovable);
+   }
 };
 
 int main(int argc, char ** argv)

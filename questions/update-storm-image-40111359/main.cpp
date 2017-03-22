@@ -4,9 +4,10 @@
 class ImageSource : public QObject {
   Q_OBJECT
   QImage m_frame{640, 480, QImage::Format_ARGB32_Premultiplied};
-  QTimer m_timer{this};
-  double m_period = 0.;
-  void makeFrame() {
+  QBasicTimer m_timer;
+  double m_period{};
+  void timerEvent(QTimerEvent * event) override {
+    if (event->timerId() != m_timer.timerId()) return;
     m_frame.fill(Qt::blue);
     QElapsedTimer t;
     t.start();
@@ -16,16 +17,15 @@ class ImageSource : public QObject {
     p.drawText(m_frame.rect(), Qt::AlignCenter,
                QStringLiteral("Hello,\nWorld!\n%1").arg(
                  QTime::currentTime().toString(QStringLiteral("hh:mm:ss.zzz"))));
-    auto const alpha = 0.01;
+    auto const alpha = 0.001;
     m_period = (1.-alpha)*m_period + alpha*(t.nsecsElapsed()*1E-9);
     emit newFrame(m_frame, m_period);
   }
 public:
   ImageSource() {
-    connect(&m_timer, &QTimer::timeout, this, &ImageSource::makeFrame);
-    m_timer.start(0);
+    m_timer.start(0, this);
   }
-  Q_SIGNAL void newFrame(const QImage &, double);
+  Q_SIGNAL void newFrame(const QImage &, double period);
 };
 
 class Viewer : public QWidget {
@@ -34,7 +34,7 @@ class Viewer : public QWidget {
   QImage m_image;
   QImage m_scaledImage;
   void paintEvent(QPaintEvent *) override {
-    qDebug() << d_ptr->postedEvents;
+    qDebug() << "Waiting events" << d_ptr->postedEvents;
     QPainter p{this};
     if (m_image.isNull()) return;
     if (m_scaledImage.isNull() || m_scaledImage.size() != size())
@@ -47,13 +47,13 @@ public:
   Q_SLOT void setImage(const QImage & image, double period) {
     Q_ASSERT(QThread::currentThread() == thread());
     m_image = image;
-    m_scaledImage = QImage{};
+    m_scaledImage = {};
     m_framePeriod = period;
     update();
   }
 };
 
-class Thread : public QThread { public: ~Thread() { quit(); wait(); } };
+class Thread final : public QThread { public: ~Thread() { quit(); wait(); } };
 
 int main(int argc, char ** argv) {
   QApplication app{argc, argv};

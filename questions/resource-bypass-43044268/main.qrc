@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>insertstatements.txt</file>
+    </qresource>
+</RCC>

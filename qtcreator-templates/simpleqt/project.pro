@@ -54,6 +54,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 @endif
 CONFIG -= qt app_bundle
 @endif
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x050800
 TARGET = %ProjectName%
 TEMPLATE = app
 SOURCES += main.cpp

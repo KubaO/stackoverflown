@@ -1,130 +1,116 @@
-#include <QApplication>
-#include <QVBoxLayout>
-#include <QPushButton>
-#include <QThread>
-#include <QBasicTimer>
-#include <QElapsedTimer>
-#include <QLabel>
-#include <QDebug>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/qobject-thread-18653347
+#include <QtGui>
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#include <QtWidgets>
+#endif
 
-#include <QDataStream>
-
-    struct C {
-        bool b;
-        QString s;
-        C() : b(false) {}
-    };
-
-    QDataStream & operator << (QDataStream & out, const C & val)
-    {
-     out << val.b << val.s;
-     return out;
-    }
+/// See http://stackoverflow.com/a/40382821/1329652
+bool isSafe(QObject * obj) {
+   Q_ASSERT(obj->thread() || qApp && qApp->thread() == QThread::currentThread());
+   auto thread = obj->thread() ? obj->thread() : qApp->thread();
+   return thread == QThread::currentThread();
+}
 
 class Helper : private QThread {
 public:
-    using QThread::usleep;
+   using QThread::usleep;
 };
 
 class Worker : public QObject {
-    Q_OBJECT
-    int m_counter;
-    bool m_busy;
-    QBasicTimer m_timer;
-    void timerEvent(QTimerEvent * ev);
+   Q_OBJECT
+   int m_counter;
+   QBasicTimer m_timer;
+   void timerEvent(QTimerEvent * ev) override;
 public:
-    Worker(QObject *parent = 0) : QObject(parent), m_busy(false) {}
-    Q_SLOT void start() {
-        if (m_busy) return;
-        m_counter = 0;
-        m_busy = true;
-        m_timer.start(0, this);
-    }
-    Q_SIGNAL void done();
-    Q_SIGNAL void progress(int);
-    // must be called from within the working thread, so we wrap it in a slot
-    Q_INVOKABLE void moveToThread(QThread *t) { QObject::moveToThread(t); }
+   Worker(QObject *parent = nullptr) : QObject(parent) {}
+   /// This method is thread-safe.
+   Q_SLOT void start() {
+      if (!isSafe(this)) return (void)QMetaObject::invokeMethod(this, "start");
+      if (m_timer.isActive()) return;
+      m_counter = 0;
+      m_timer.start(0, this);
+   }
+   /// This method is thread-safe.
+   Q_INVOKABLE void startInThread(QObject *targetThread) {
+      if (!isSafe(this)) return (void)QMetaObject::invokeMethod(this, "startInThread", Q_ARG(QObject*, targetThread));
+      QObject::moveToThread(qobject_cast<QThread*>(targetThread));
+      start();
+   }
+   Q_SIGNAL void done();
+   Q_SIGNAL void progress(int percent, bool inGuiThread);
 };
 
 void Worker::timerEvent(QTimerEvent * ev)
 {
-    const int busyTime = 50; // [ms] - longest amount of time to stay busy
-    const int testFactor = 128; // number of iterations between time tests
-    const int maxCounter = 10000;
-    if (ev->timerId() != m_timer.timerId()) return;
+   const int busyTime = 50; // [ms] - longest amount of time to stay busy
+   const int testFactor = 128; // number of iterations between time tests
+   const int maxCounter = 30000;
+   if (ev->timerId() != m_timer.timerId()) return;
 
-    QElapsedTimer t;
-    t.start();
-    while (1) {
-        // do some "work"
-        Helper::usleep(100);
-        m_counter ++;
-        // exit when the work is done
-        if (m_counter > maxCounter) {
-            emit progress(100);
-            emit done();
-            m_busy = false;
-            break;
-        }
-        // exit when we're done with a timed "chunk" of work
-        // Note: QElapsedTimer::elapsed() may be expensive, so we call it once every testFactor iterations
-        if ((m_counter % testFactor) == 1 && t.elapsed() > busyTime) {
-            emit progress(m_counter*100/maxCounter);
-            break;
-        }
-    }
+   const auto inGuiThread = []{ return QThread::currentThread() == qApp->thread(); };
+   QElapsedTimer t;
+   t.start();
+   while (1) {
+      // do some "work"
+      Helper::usleep(100);
+      m_counter ++;
+      // exit when the work is done
+      if (m_counter > maxCounter) {
+         emit progress(100, inGuiThread());
+         emit done();
+         m_timer.stop();
+         break;
+      }
+      // exit when we're done with a timed "chunk" of work
+      // Note: QElapsedTimer::elapsed() may be expensive, so we call it once every testFactor iterations
+      if ((m_counter % testFactor) == 0 && t.elapsed() > busyTime) {
+         emit progress(m_counter*100/maxCounter, inGuiThread());
+         break;
+      }
+   }
 }
 
 class Window : public QWidget {
-    Q_OBJECT
-    QLabel *m_label;
-    QThread *m_thread;
-    QObject *m_worker;
-    Q_SIGNAL void start();
-    Q_SLOT void showProgress(int p) { m_label->setText(QString("%1 %").arg(p)); }
-    void moveWorkerToThread(QThread *thread) {
-        qDebug() << QMetaObject::invokeMethod(m_worker, "moveToThread", Q_ARG(QThread*, thread));
-    }
-    Q_SLOT void on_startGUI_clicked() {
-        moveWorkerToThread(qApp->thread());
-        emit start();
-    }
-    Q_SLOT void on_startWorker_clicked() {
-        moveWorkerToThread(m_thread);
-        emit start();
-    }
+   Q_OBJECT
+   QVBoxLayout m_layout{this};
+   QPushButton m_startGUI{"Start in GUI Thread"};
+   QPushButton m_startWorker{"Start in Worker Thread"};
+   QLabel m_label;
+   QThread m_thread{this};
+   Worker m_worker;
+
+   Q_SLOT void showProgress(int p, bool inGuiThread) {
+      m_label.setText(QString("%1 % in %2 thread")
+                      .arg(p).arg(inGuiThread ? "gui" : "worker"));
+   }
+   Q_SLOT void on_startGUI_clicked() {
+      m_worker.startInThread(qApp->thread());
+   }
+   Q_SLOT void on_startWorker_clicked() {
+      m_worker.startInThread(&m_thread);
+   }
 public:
-    Window(QWidget *parent = 0, Qt::WindowFlags f = 0) :
-        QWidget(parent, f), m_label(new QLabel), m_thread(new QThread(this)), m_worker(new Worker)
-    {
-        QVBoxLayout * l = new QVBoxLayout(this);
-        QPushButton * btn;
-        btn = new QPushButton("Start in GUI Thread");
-        btn->setObjectName("startGUI");
-        l->addWidget(btn);
-        btn = new QPushButton("Start in Worker Thread");
-        btn->setObjectName("startWorker");
-        l->addWidget(btn);
-        l->addWidget(m_label);
-        connect(m_worker, SIGNAL(progress(int)), SLOT(showProgress(int)));
-        m_worker->connect(this, SIGNAL(start()), SLOT(start()));
-        m_thread->start();
-        QMetaObject::connectSlotsByName(this);
-    }
-    ~Window() {
-        m_thread->quit();
-        m_thread->wait();
-        delete m_worker;
-    }
+   Window(QWidget *parent = {}, Qt::WindowFlags f = {}) : QWidget(parent, f) {
+      m_layout.addWidget(&m_startGUI);
+      m_layout.addWidget(&m_startWorker);
+      m_layout.addWidget(&m_label);
+      m_thread.start();
+      connect(&m_worker, SIGNAL(progress(int,bool)), SLOT(showProgress(int,bool)));
+      connect(&m_startGUI, SIGNAL(clicked(bool)), SLOT(on_startGUI_clicked()));
+      connect(&m_startWorker, SIGNAL(clicked(bool)), SLOT(on_startWorker_clicked()));
+   }
+   ~Window() {
+      m_thread.quit();
+      m_thread.wait();
+   }
 };
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    qRegisterMetaType<QThread*>("QThread*"); // for invokeMethod to work
-    Window w;
-    w.show();
-    return a.exec();
+   QApplication a(argc, argv);
+   Window w;
+   w.show();
+   return a.exec();
 }
 
 #include "main.moc"

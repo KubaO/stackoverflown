@@ -3,7 +3,14 @@
 @endif
 @if "%QT%" == "true"
 @if "%CONSOLE%" == "false"
+@if "%QT4SUPPORT%" == "false"
 #include <QtWidgets>
+@else
+#include <QtGui>
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#include <QtWidgets>
+#endif
+@endif
 @else
 #include <QtCore>
 @endif

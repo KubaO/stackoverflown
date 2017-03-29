@@ -1,6 +1,9 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/simple-callback-43094825
+#include <QtGui>
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
 #include <QtWidgets>
 #include <QtConcurrent>
+#endif
 
 class MyWindow: public QDialog
 {
@@ -11,19 +14,20 @@ class MyWindow: public QDialog
 public:
    MyWindow(QWidget * parent = nullptr) : QDialog(parent) {
       m_layout.addWidget(&m_button);
-      connect(&m_button, &QPushButton::clicked, this, &MyWindow::Scan);
-      connect(this, &MyWindow::ScanFinished, this, &MyWindow::OnScanFinished);
+      connect(&m_button, SIGNAL(clicked(bool)), this, SLOT(Scan()));
+      connect(this, SIGNAL(ScanFinished()), this, SLOT(OnScanFinished()));
    }
-   void Scan();
+   Q_SLOT void Scan();
    static void ScanFinishedCallback(void* w);
-   void OnScanFinished();
+   Q_SLOT void OnScanFinished();
 };
 
 void StartScan(void(*callback)(void*), void* data) {
    // Mockup of the scanning process: invoke the callback after a delay from
    // a worker thread.
    QtConcurrent::run([=]{
-      QThread::sleep(2);
+      struct Helper : QThread { using QThread::sleep; };
+      Helper::sleep(2);
       callback(data);
    });
 }
@@ -36,7 +40,7 @@ void MyWindow::Scan()
 
 void MyWindow::ScanFinishedCallback(void* data)
 {
-   emit reinterpret_cast<MyWindow*>(data)->ScanFinished();
+   emit static_cast<MyWindow*>(data)->ScanFinished();
 }
 
 void MyWindow::OnScanFinished()

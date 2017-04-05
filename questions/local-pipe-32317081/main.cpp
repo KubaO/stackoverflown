@@ -1,3 +1,4 @@
+// https://github.com/KubaO/stackoverflown/tree/master/questions/local-pipe-32317081
 #include <QtCore>
 #include <private/qringbuffer_p.h>
 
@@ -13,12 +14,11 @@ class AppPipe : public QIODevice {
       emit readyRead();
    }
 public:
-   AppPipe(AppPipe * other, QIODevice::OpenMode mode, QObject * parent = 0) :
-      QIODevice(parent) {
-      addOther(other);
+   AppPipe(AppPipe * other, QIODevice::OpenMode mode, QObject * parent = {}) :
+      AppPipe(other, parent) {
       open(mode);
    }
-   AppPipe(AppPipe * other, QObject * parent = 0) : QIODevice(parent) {
+   AppPipe(AppPipe * other = {}, QObject * parent = {}) : QIODevice(parent) {
       addOther(other);
    }
    void addOther(AppPipe * other) {
@@ -27,25 +27,25 @@ public:
    void removeOther(AppPipe * other) {
       disconnect(this, &AppPipe::hasOutgoing, other, &AppPipe::_a_write);
    }
-   void close() Q_DECL_OVERRIDE {
+   void close() override {
       QIODevice::close();
       m_buf.clear();
    }
-   qint64 writeData(const char * data, qint64 maxSize) Q_DECL_OVERRIDE {
+   qint64 writeData(const char * data, qint64 maxSize) override {
       if (!maxSize) return maxSize;
       hasOutgoing(QByteArray(data, maxSize));
       return maxSize;
    }
-   qint64 readData(char * data, qint64 maxLength) Q_DECL_OVERRIDE {
+   qint64 readData(char * data, qint64 maxLength) override {
       return m_buf.read(data, maxLength);
    }
-   qint64 bytesAvailable() const Q_DECL_OVERRIDE {
+   qint64 bytesAvailable() const override {
       return m_buf.size() + QIODevice::bytesAvailable();
    }
-   bool canReadLine() const Q_DECL_OVERRIDE {
+   bool canReadLine() const override {
       return QIODevice::canReadLine() || m_buf.canReadLine();
    }
-   bool isSequential() const Q_DECL_OVERRIDE { return true; }
+   bool isSequential() const override { return true; }
    Q_SIGNAL void hasOutgoing(const QByteArray &);
    Q_SIGNAL void hasIncoming(const QByteArray &);
 };

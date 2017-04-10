@@ -1,8 +1,8 @@
-#include <QApplication>
-#include <QLabel>
-#include <QPainter>
-#include <QPicture>
-#include <QDebug>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/alignments-24831484
+#include <QtGui>
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#include <QtWidgets>
+#endif
 
 void drawText(QPainter & painter, qreal x, qreal y, Qt::Alignment flags,
               const QString & text, QRectF * boundingRect = 0)
@@ -14,42 +14,42 @@ void drawText(QPainter & painter, qreal x, qreal y, Qt::Alignment flags,
    if (flags & Qt::AlignVCenter) corner.ry() += size/2.0;
    else if (flags & Qt::AlignTop) corner.ry() += size;
    else flags |= Qt::AlignBottom;
-   QRectF rect(corner, QSizeF(size, size));
+   QRectF rect{corner.x(), corner.y(), size, size};
    painter.drawText(rect, flags, text, boundingRect);
 }
 
 void drawText(QPainter & painter, const QPointF & point, Qt::Alignment flags,
-              const QString & text, QRectF * boundingRect = 0)
+              const QString & text, QRectF * boundingRect = {})
 {
    drawText(painter, point.x(), point.y(), flags, text, boundingRect);
 }
 
 int main(int argc, char *argv[])
 {
-   QApplication a(argc, argv);
-   QLabel l;
+   QApplication a{argc, argv};
+   QLabel label;
    QPicture pic;
-   pic.setBoundingRect(QRect(-100, -100, 200, 200));
+   pic.setBoundingRect({-100, -100, 200, 200});
    QPainter p(&pic);
-   QPointF pt;
+   const QPointF pt;
 
    p.drawEllipse(pt, 3, 3);
-   p.setFont(QFont("Helvetica", 40));
-   p.setPen(QColor(128, 0, 0, 128));
+   p.setFont({"Helvetica", 40});
+   p.setPen({128, 0, 0, 128});
    drawText(p, pt, Qt::AlignBottom, "_LB");
    drawText(p, pt, Qt::AlignVCenter, "_LC");
    drawText(p, pt, Qt::AlignTop, "_LT");
-   p.setPen(QColor(0, 128, 0, 128));
+   p.setPen({0, 128, 0, 128});
    drawText(p, pt, Qt::AlignBottom | Qt::AlignHCenter, "MB");
    drawText(p, pt, Qt::AlignVCenter | Qt::AlignHCenter, "MC");
    drawText(p, pt, Qt::AlignTop | Qt::AlignHCenter, "MT");
-   p.setPen(QColor(0, 0, 128, 128));
+   p.setPen({0, 0, 128, 128});
    drawText(p, pt, Qt::AlignBottom | Qt::AlignRight, "RB_");
    drawText(p, pt, Qt::AlignVCenter | Qt::AlignRight, "RC_");
    drawText(p, pt, Qt::AlignTop | Qt::AlignRight, "RT_");
    p.end();
 
-   l.setPicture(pic);
-   l.show();
+   label.setPicture(pic);
+   label.show();
    return a.exec();
 }

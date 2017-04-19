@@ -5,7 +5,6 @@ class MainWindow : public QWidget
 {
    Q_OBJECT
    QGridLayout m_layout{this};
-   QPushButton m_draw{"Draw"};
    QPushButton m_erase{"Erase"};
    QGraphicsView m_view;
 public:
@@ -23,39 +22,48 @@ public:
 
 class MyScene : public QGraphicsScene {
    Q_OBJECT
-   QPolygonF m_polygon;
-   QGraphicsPolygonItem m_polygonItem;
+   QPainterPath m_path;
+   QGraphicsPathItem m_pathItem;
    QGraphicsLineItem m_lineItem;
+   struct PathUpdater {
+      QGraphicsPathItem & item;
+      QPainterPath & path;
+      PathUpdater(QGraphicsPathItem & item, QPainterPath & path) :
+         item(item), path(path) {
+         item.setPath({}); // avoid a copy-on-write
+      }
+      ~PathUpdater() { item.setPath(path); }
+   };
    void mousePressEvent(QGraphicsSceneMouseEvent *event) override {
+      PathUpdater updater(m_pathItem, m_path);
       auto pos = event->scenePos();
       m_lineItem.setLine(0, 0, pos.x(), pos.y());
       m_lineItem.setVisible(true);
-      if (m_polygon.isEmpty())
-         m_polygon.append(pos);
-      m_polygon.append(pos);
-      m_polygonItem.setPolygon(m_polygon);
+      if (m_path.elementCount() == 0)
+         m_path.moveTo(pos);
+      m_path.lineTo(pos.x()+1,pos.y()+1); // otherwise lineTo is a NOP
    }
    void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override {
+      PathUpdater updater(m_pathItem, m_path);
       auto pos = event->scenePos();
       m_lineItem.setLine(0, 0, pos.x(), pos.y());
-      m_polygon.back() = pos;
-      m_polygonItem.setPolygon(m_polygon);
+      m_path.setElementPositionAt(m_path.elementCount()-1, pos.x(), pos.y());
    }
    void mouseReleaseEvent(QGraphicsSceneMouseEvent *) override {
       m_lineItem.setVisible(false);
    }
 public:
    MyScene() {
-      addItem(&m_polygonItem);
+      addItem(&m_pathItem);
       addItem(&m_lineItem);
-      m_polygonItem.setPen({Qt::red});
-      m_polygonItem.setBrush(Qt::NoBrush);
+      m_pathItem.setPen({Qt::red});
+      m_pathItem.setBrush(Qt::NoBrush);
       m_lineItem.setPen({Qt::white});
       m_lineItem.setVisible(false);
    }
    Q_SLOT void clear() {
-      m_polygon.clear();
-      m_polygonItem.setPolygon(m_polygon);
+      m_path = {};
+      m_pathItem.setPath(m_path);
    }
 };
 

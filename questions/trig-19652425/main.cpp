@@ -1,110 +1,113 @@
-#include <QApplication>
-#include <QLabel>
-#include <QLineEdit>
-#include <QFormLayout>
-#include <QVBoxLayout>
-#include <QDialogButtonBox>
-#include <QPushButton>
-#include <QMessageBox>
-#include <QStateMachine>
-#include <QTcpSocket>
+#include <QtWidgets>
+#include <QtNetwork>
 
 class SocketSignaler : public QObject
 {
-    Q_OBJECT
-    Q_SLOT void stateChanged(QAbstractSocket::SocketState state) {
-        if (state == QAbstractSocket::UnconnectedState) { emit unconnected(); }
-        else { emit busy(); }
-        emit hasState(this->state());
-    }
+   Q_OBJECT
+   Q_SLOT void stateChanged(QAbstractSocket::SocketState state) {
+      if (state == QAbstractSocket::UnconnectedState) emit unconnected();
+      else emit busy();
+      emit hasState(this->state());
+   }
 public:
-    explicit SocketSignaler(QAbstractSocket * socket) : QObject(socket) {
-        connect(socket, &QAbstractSocket::stateChanged, this, &SocketSignaler::stateChanged);
-    }
-    Q_SIGNAL void busy();
-    Q_SIGNAL void unconnected();
-    Q_SIGNAL void hasState(const QString &);
-    QString state() {
-        switch (static_cast<QAbstractSocket*>(parent())->state()) {
-        case QAbstractSocket::UnconnectedState: return "Disconnected";
-        case QAbstractSocket::HostLookupState: return "Looking up host";
-        case QAbstractSocket::ConnectingState: return "Connecting";
-        case QAbstractSocket::ConnectedState: return "Connected";
-        case QAbstractSocket::ClosingState: return "Closing";
-        default: return QString();
-        }
-    }
+   explicit SocketSignaler(QAbstractSocket * socket) : QObject(socket) {
+      connect(socket, &QAbstractSocket::stateChanged, this, &SocketSignaler::stateChanged);
+      connect(&(const QObject&)QObject(), &QObject::destroyed, this, // defer signal emission
+              [=]{ emit stateChanged(socket->state()); }, Qt::QueuedConnection);
+   }
+   Q_SIGNAL void busy();
+   Q_SIGNAL void unconnected();
+   Q_SIGNAL void hasState(const QString &);
+   QString state() const {
+      switch (static_cast<QAbstractSocket*>(parent())->state()) {
+      case QAbstractSocket::UnconnectedState: return "Disconnected";
+      case QAbstractSocket::HostLookupState: return "Looking up host";
+      case QAbstractSocket::ConnectingState: return "Connecting";
+      case QAbstractSocket::ConnectedState: return "Connected";
+      case QAbstractSocket::ClosingState: return "Closing";
+      default: return {};
+      }
+   }
+};
+
+class Ui : public QWidget {
+   Q_OBJECT
+   Q_PROPERTY(bool busy WRITE setBusy)
+   QVBoxLayout m_layout{this};
+   QFormLayout m_form;
+   QLineEdit m_target{"192.168.1.100"};
+   QLineEdit m_message{"TRIG"};
+   QLabel m_state;
+   QDialogButtonBox m_box;
+   QPushButton * const m_send = m_box.addButton("Send", QDialogButtonBox::AcceptRole);
+   QPushButton * const m_cancel = m_box.addButton(QDialogButtonBox::Cancel);
+   QMessageBox m_msgBox{this};
+public:
+   Ui() {
+      m_form.addRow("Target Host", &m_target);
+      m_form.addRow("Command", &m_message);
+      m_layout.addLayout(&m_form);
+      m_layout.addWidget(&m_state);
+      m_layout.addWidget(&m_box);
+      m_msgBox.setIcon(QMessageBox::Critical);
+      connect(m_send, &QPushButton::clicked, this, &Ui::send);
+      connect(m_cancel, &QPushButton::clicked, this, &Ui::cancel);
+   }
+   void setState(const QString & text) { m_state.setText(text); }
+   QString target() const { return m_target.text(); }
+   QString message() const { return m_message.text(); }
+   void showError(const QString & text) {
+      m_msgBox.setText(text);
+      m_msgBox.show();
+   }
+   void setBusy(bool busy) {
+      m_send->setEnabled(!busy);
+      m_cancel->setEnabled(busy);
+   }
+   Q_SIGNAL void send();
+   Q_SIGNAL void cancel();
 };
 
 int main(int argc, char *argv[])
 {
-    const int targetPort = 23;
-    QApplication a(argc, argv);
-#if defined(Q_OS_MACX)
-    if (QSysInfo::MacintoshVersion > QSysInfo::MV_10_8) {
-        // fix Mac OS X 10.9 (mavericks) font issue
-        // https://bugreports.qt-project.org/browse/QTBUG-32789
-        QFont::insertSubstitution(".Lucida Grande UI", "Lucida Grande");
-    }
-#endif
-    QWidget w;
-    QVBoxLayout * l = new QVBoxLayout(&w);
-    QFormLayout * f = new QFormLayout;
-    QLineEdit * target = new QLineEdit;
-    QLineEdit * message = new QLineEdit;
-    target->setText("192.168.1.100");
-    message->setText("TRIG");
-    f->addRow("Target Host", target);
-    f->addRow("Command", message);
-    l->addLayout(f);
-    QLabel * state = new QLabel;
-    l->addWidget(state);
-    QDialogButtonBox * box = new QDialogButtonBox;
-    l->addWidget(box);
-    QPushButton * send = box->addButton("Send", QDialogButtonBox::AcceptRole);
-    QPushButton * cancel = box->addButton(QDialogButtonBox::Cancel);
-    w.show();
+   const int targetPort = 23;
+   QApplication app{argc, argv};
+   Ui ui;
+   ui.show();
 
-    QMessageBox * mbox = new QMessageBox(&w);
-    mbox->setIcon(QMessageBox::Critical);
+   QTcpSocket socket;
+   SocketSignaler socketSig{&socket};
+   QObject::connect(&socketSig, &SocketSignaler::hasState, &ui, &Ui::setState);
 
-    QTcpSocket * socket = new QTcpSocket(&a);
-    SocketSignaler * socketSig = new SocketSignaler(socket);
-    state->setText(socketSig->state());
-    QObject::connect(socketSig, &SocketSignaler::hasState, state, &QLabel::setText);
+   QStateMachine machine;
+   QState sReady{&machine};
+   QState sBusy{&machine};
+   sReady.assignProperty(&ui, "busy", false);
+   sBusy.assignProperty(&ui, "busy", true);
+   sReady.addTransition(&socketSig, &SocketSignaler::busy, &sBusy);
+   sBusy.addTransition(&socketSig, &SocketSignaler::unconnected, &sReady);
 
-    QStateMachine machine;
-    QState * sReady = new QState(&machine);
-    QState * sBusy = new QState(&machine);
-    sReady->assignProperty(send, "enabled", true);
-    sReady->assignProperty(cancel, "enabled", false);
-    sBusy->assignProperty(send, "enabled", false);
-    sBusy->assignProperty(cancel, "enabled", true);
-    sReady->addTransition(socketSig, SIGNAL(busy()), sBusy);
-    sBusy->addTransition(socketSig, SIGNAL(unconnected()), sReady);
+   QObject::connect(&ui, &Ui::send, [&](){
+      socket.connectToHost(ui.target(), targetPort);
+   });
+   QObject::connect(&ui, &Ui::cancel, [&](){ socket.abort(); });
+   QObject::connect(&socket,
+                    static_cast<void (QAbstractSocket::*)(QAbstractSocket::SocketError)>
+                    (&QAbstractSocket::error), [&]()
+   {
+      ui.showError(socket.errorString());
+   });
+   QObject::connect(&socket, &QAbstractSocket::connected, [&](){
+      auto msg = ui.message().toLatin1();
+      msg.append('\n');
+      if (socket.write(msg) >= msg.size()) socket.close();
+   });
+   QObject::connect(&socket, &QAbstractSocket::bytesWritten, [&](){
+      if (!socket.bytesToWrite()) socket.close();
+   });
 
-    QObject::connect(send, &QPushButton::clicked, [=](){
-        socket->connectToHost(target->text(), targetPort);
-    });
-    QObject::connect(cancel, &QPushButton::clicked, [=](){ socket->abort(); });
-    QObject::connect(socket,
-        static_cast<void (QAbstractSocket::*)(QAbstractSocket::SocketError)>
-                    (&QAbstractSocket::error), [=]()
-    {
-        mbox->setText(socket->errorString());
-        mbox->show();
-    });
-    QObject::connect(socket, &QAbstractSocket::connected, [=](){
-        const QByteArray msg(message->text().toLatin1());
-        if (socket->write(msg) >= msg.size()) socket->close();
-    });
-    QObject::connect(socket, &QAbstractSocket::bytesWritten, [=](){
-        if (!socket->bytesToWrite()) socket->close();
-    });
-
-    machine.setInitialState(sReady);
-    machine.start();
-    return a.exec();
+   machine.setInitialState(&sReady);
+   machine.start();
+   return app.exec();
 }
-
 #include "main.moc"

@@ -1,9 +1,6 @@
-QT       += core gui network
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+QT = widgets network
 CONFIG += c++11
-
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000
 TARGET = trig-19652425
-
 TEMPLATE = app
-
 SOURCES += main.cpp

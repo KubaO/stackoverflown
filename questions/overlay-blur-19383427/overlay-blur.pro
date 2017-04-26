@@ -9,6 +9,6 @@ greaterThan(QT_MAJOR_VERSION, 4) {
         QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
     }
 }
-TARGET = overlay-widget-19362455
+TARGET = overlay-blur-19383427
 TEMPLATE = app
 SOURCES += main.cpp

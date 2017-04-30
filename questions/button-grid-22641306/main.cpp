@@ -1,5 +1,7 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/button-grid-22641306
-#if 0
+#define VARIANT 3
+
+#if VARIANT==1
 
 #include <QtGui>
 #if QT_VERSION_MAJOR >= 5
@@ -39,9 +41,7 @@ int main(int argc, char *argv[])
 }
 #include "main.moc"
 
-#endif
-
-#if 0
+#elif VARIANT==2
 
 #include <QtGui>
 #if QT_VERSION_MAJOR >= 5
@@ -74,9 +74,7 @@ int main(int argc, char *argv[])
    return a.exec();
 }
 
-#endif
-
-#if 0
+#elif VARIANT==3
 
 #include <QtWidgets>
 
@@ -105,9 +103,7 @@ int main(int argc, char *argv[])
    return a.exec();
 }
 
-#endif
-
-#if 1
+#elif VARIANT==4
 
 #include <QtGui>
 #if QT_VERSION_MAJOR >= 5
@@ -116,7 +112,10 @@ int main(int argc, char *argv[])
 
 struct Display : QLabel {
    Q_SLOT void onClicked() {
-      setText(sender()->objectName());
+      auto const elements = sender()->objectName().split('_');
+      auto const i = elements.at(1).toInt();
+      auto const j = elements.at(2).toInt();
+      setText(QString{"(%1,%2)"}.arg(i).arg(j));
    }
    Q_OBJECT
 };
@@ -134,7 +133,7 @@ int main(int argc, char *argv[])
       for (int j = 0; j < columns; ++j) {
          auto & button = buttons[i*columns+j];
          button.setText(QString{"(%1,%2)"}.arg(i).arg(j));
-         button.setObjectName(QString{"buton_%1_%2"}.arg(i).arg(j));
+         button.setObjectName(QString{"button_%1_%2"}.arg(i).arg(j));
          layout.addWidget(&button, i, j);
          display.connect(&button, SIGNAL(clicked()), SLOT(onClicked()));
       }

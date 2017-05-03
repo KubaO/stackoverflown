@@ -3,3 +3,4 @@
 *.qmlproject.user*
 /build-*
 questions/build-*
+qtcreator-plugins/build-*

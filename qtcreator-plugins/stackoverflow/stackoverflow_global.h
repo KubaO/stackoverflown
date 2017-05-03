@@ -1,0 +1,9 @@
+#pragma once
+
+#include <QtGlobal>
+
+#if defined(STACKOVERFLOW_LIBRARY)
+#  define STACKOVERFLOWSHARED_EXPORT Q_DECL_EXPORT
+#else
+#  define STACKOVERFLOWSHARED_EXPORT Q_DECL_IMPORT
+#endif

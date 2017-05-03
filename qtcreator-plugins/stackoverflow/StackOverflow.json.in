@@ -1,0 +1,11 @@
+{
+    \"Name\" : \"StackOverflow\",
+    \"Version\" : \"0.0.1\",
+    \"CompatVersion\" : \"0.0.1\",
+    \"Vendor\" : \"KubaOber\",
+    \"Copyright\" : \"(C) 2017 Kuba Ober\",
+    \"License\" : \"MIT License\",
+    \"Description\" : \"A plugin providing JS access to StackOverflow API\",
+    \"Url\" : \"https://github.com/KubaO/stackoverflown\",
+    $$dependencyList
+}

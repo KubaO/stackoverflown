@@ -9,10 +9,10 @@ encourage:
 
 To install the templates:
 
-1. Locate the installation folder of Qt Creator, and there the following folder:
+1. Locate the destination folder - create it if it doesn't exist.
 
- * `shared/templates/wizards` on Windows and Unix,
- * `Resources/templates/wizards` on OS X, within the app bundle.
+ * `%APPDATA%\QtProject\qtcreator\templates` on Windows,
+ * `~/.config/QtProject/qtcreator/templates` on Unix and OS X.
 
 2. Link or copy each of the folders here to the folder above.
 

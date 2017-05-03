@@ -1,11 +1,18 @@
 {
     \"Name\" : \"StackOverflow\",
-    \"Version\" : \"0.0.1\",
-    \"CompatVersion\" : \"0.0.1\",
-    \"Vendor\" : \"KubaOber\",
+    \"Version\" : \"0.1\",
+    \"CompatVersion\" : \"0.1\",
+    \"Vendor\" : \"Kuba Ober\",
     \"Copyright\" : \"(C) 2017 Kuba Ober\",
     \"License\" : \"MIT License\",
-    \"Description\" : \"A plugin providing JS access to StackOverflow API\",
+    \"Description\" : [ \"A plugin providing JS access to some of StackOverflow API\",
+                        \"\",
+                        \"The APIs can be used e.g. from the %{JS: ...} substitutions in templates\",
+                        \"and wizards.\",
+                        \"The following APIs are available:\",
+                        \"StackOverflow.getQuestionCode(questionID) - return all the code\",
+                        \"  in a question with a given id.\"
+    ],
     \"Url\" : \"https://github.com/KubaO/stackoverflown\",
     $$dependencyList
 }

@@ -121,6 +121,17 @@
                     {
                         "trText": "https://github.com/KubaO/stackoverflown/tree/master/questions"
                     }
+                },
+                {
+                    "name": "SOQUESTION",
+                    "trDisplayName": "Download Code from SO Question",
+                    "type": "LineEdit",
+                    "enabled": "%{JS: [ %{Plugins} ].indexOf('StackOverflow') >= 0}",
+                    "mandatory": false,
+                    "data":
+                    {
+                        "trPlaceholder": "Enter SO question number"
+                    }
                 }
             ]
         },

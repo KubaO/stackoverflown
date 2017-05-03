@@ -1,24 +1,32 @@
 DEFINES += STACKOVERFLOW_LIBRARY
+QT += network
 
 # StackOverflow files
 
-SOURCES += stackoverflowplugin.cpp
+SOURCES += stackoverflowplugin.cpp \
+    sojsextension.cpp
 
 HEADERS += stackoverflowplugin.h \
-        stackoverflow_global.h \
-        stackoverflowconstants.h
+    stackoverflow_global.h \
+    stackoverflowconstants.h \
+    sojsextension.h
+
+OTHER_FILES += StackOverflow.json.in
 
 # Qt Creator linking
+# By default, we expect:
+# Qt Creator source [linked] in ~/Qt/qt-creator-opensource-src-4
+# Qt Creator binary [linked] in ~/bin/QtCreator[.app]
 
 ## Either set the IDE_SOURCE_TREE when running qmake,
 ## or set the QTC_SOURCE environment variable, to override the default setting
 isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = $$(QTC_SOURCE)
-isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = "/Users/kuba/Qt/qt-creator-opensource-src-4.2.1"
+isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = $$(HOME)/Qt/qt-creator-opensource-src-4
 
 ## Either set the IDE_BUILD_TREE when running qmake,
 ## or set the QTC_BUILD environment variable, to override the default setting
 isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
-isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = "/Applications/MacPorts/Qt5/Qt Creator.app/Contents"
+isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(HOME)
 
 ## uncomment to build plugin into user config directory
 ## <localappdata>/plugins/<ideversion>

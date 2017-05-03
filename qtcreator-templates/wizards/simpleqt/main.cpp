@@ -27,6 +27,13 @@ public:
 };
 
 @endif
+@if "%{SOQUESTION}" != ""
+// Code from SO question %{SOQUESTION}
+%{JS: StackOverflow.getQuestionCode("%{SOQUESTION}")}
+// Status
+%{JS: StackOverflow.getStatus()}
+
+@endif
 int main(int argc, char ** argv) {
 @if "%{CONSOLE}" == "false"
 @if "%{CPP11INITS}" == "true"
@@ -50,6 +57,13 @@ int main(int argc, char ** argv) {
 @else
 #include <iostream>
 
+@if "%{SOQUESTION}" != ""
+// Code from SO question %{SOQUESTION}
+%{JS: StackOverflow.getQuestionCode("%{SOQUESTION}")}
+// Status
+%{JS: StackOverflow.getStatus()}
+
+@endif
 int main()
 {
 }

@@ -22,32 +22,25 @@
 **
 ****************************************************************************/
 
-#include "stackoverflowplugin.h"
-#include "stackoverflowconstants.h"
-#include "sojsextension.h"
+#pragma once
 
-#include <coreplugin/jsexpander.h>
-
-#include <QAction>
-#include <QMessageBox>
-#include <QMainWindow>
-#include <QMenu>
+#include <QObject>
 
 namespace StackOverflow {
 namespace Internal {
 
-bool StackOverflowPlugin::initialize(const QStringList &arguments, QString *errorString)
+class SOJsExtension : public QObject
 {
-    Q_UNUSED(arguments)
-    Q_UNUSED(errorString)
+    Q_OBJECT
+public:
+    SOJsExtension(QObject * parent = 0);
 
-    Core::JsExpander::registerQObjectForJs(QLatin1String("StackOverflow"), new SOJsExtension(this));
+    Q_INVOKABLE QString getQuestionCode(const QString & questionId);
+    Q_INVOKABLE QString getStatus() const;
 
-    return true;
-}
-
-void StackOverflowPlugin::extensionsInitialized()
-{}
+private:
+    QString m_status;
+};
 
 } // namespace Internal
 } // namespace StackOverflow

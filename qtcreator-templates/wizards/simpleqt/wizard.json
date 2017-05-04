@@ -1,0 +1,152 @@
+{
+    "version": 1,
+    "supportedProjectTypes": [ "Qt4ProjectManager.Qt4Project" ],
+    "id": "A.Simpleqmake",
+    "category": "H.Project",
+    "trDescription": "Creates a simple qmake project for experiments.",
+    "trDisplayName": "Simple qmake Project",
+    "trDisplayCategory": "Other Project",
+    "icon": "console.png",
+    "featuresRequired": [ "QtSupport.Wizards.FeatureQt" ],
+    "enabled": "%{JS: [ %{Plugins} ].indexOf('QmakeProjectManager') >= 0}",
+    "options":
+    [
+        { "key": "ProFileName", "value": "%{JS: Util.fileName('%{ProjectDirectory}/%{ProjectName}', 'pro')}" },
+        { "key": "IsTopLevelProject", "value": "%{JS: !'%{Exists:ProjectExplorer.Profile.Ids}'}" }
+    ],
+
+    "pages":
+    [
+        {
+            "trDisplayName": "Project Location",
+            "trShortTitle": "Location",
+            "typeId": "Project",
+            "data": { "trDescription": "This wizard creates a simple qmake project with a main.cpp." }
+        },
+        {
+            "trDisplayName": "Kit Selection",
+            "trShortTitle": "Kits",
+            "typeId": "Kits",
+            "enabled": "%{IsTopLevelProject}",
+            "data": { "projectFilePath": "%{ProFileName}" }
+        },
+        {
+            "trDisplayName": "Simple qmake Project Details",
+            "trShortTitle": "Details",
+            "typeId": "Fields",
+            "data":
+            [
+                {
+                    "name": "QT",
+                    "trDisplayName": "Include Qt Modules",
+                    "type": "CheckBox",
+                    "span": true,
+                    "data":
+                    {
+                        "checkedValue": true,
+                        "uncheckedValue": false
+                    }
+                },
+                {
+                    "name": "QT4SUPPORT",
+                    "trDisplayName": "Support Qt 4 qmake",
+                    "type": "CheckBox",
+                    "span": true,
+                    "data":
+                    {
+                        "checkedValue": true,
+                        "uncheckedValue": false
+                    }
+                },
+                {
+                    "name": "CONSOLE",
+                    "trDisplayName": "Console Project Only",
+                    "type": "CheckBox",
+                    "span": true,
+                    "data":
+                    {
+                        "checkedValue": true,
+                        "uncheckedValue": false
+                    }
+                },
+                {
+                    "name": "CPP11INITS",
+                    "trDisplayName": "C++11 Brace Initializers",
+                    "type": "CheckBox",
+                    "span": true,
+                    "data":
+                    {
+                        "checkedValue": true,
+                        "uncheckedValue": false
+                    }
+                },
+                {
+                    "name": "MODULES",
+                    "trDisplayName": "Other Qt Modules, space separated",
+                    "type": "LineEdit",
+                    "mandatory": false,
+                    "data":
+                    {
+                        "trPlaceholder": "Enter other Qt modules"
+                    }
+                },
+                {
+                    "name": "OBJECT",
+                    "trDisplayName": "QObject-derived class to define",
+                    "type": "LineEdit",
+                    "mandatory": false,
+                    "data":
+                    {
+                        "trPlaceholder": "Enter class name"
+                    }
+                },
+                {
+                    "name": "GITHUBLINK",
+                    "trDisplayName": "Include github project link as a comment",
+                    "type": "CheckBox",
+                    "span": true,
+                    "data":
+                    {
+                        "checkedValue": true,
+                        "uncheckedValue": false
+                    }
+                },
+                {
+                    "name": "GITHUBURL",
+                    "trDisplayName": "URL of the github repository",
+                    "type": "LineEdit",
+                    "enabled": "%{JS: (%{GITHUBLINK} == true)}",
+                    "mandatory": "%{JS: (%{GITHUBLINK} == true)}",
+                    "data":
+                    {
+                        "trText": "https://github.com/KubaO/stackoverflown/tree/master/questions"
+                    }
+                }
+            ]
+        },
+        {
+            "trDisplayName": "Project Management",
+            "trShortTitle": "Summary",
+            "typeId": "Summary"
+        }
+    ],
+    "generators":
+    [
+        {
+            "typeId": "File",
+            "data":
+            [
+                {
+                    "source": "project.pro",
+                    "target": "%{ProFileName}",
+                    "openAsProject": true
+                },
+                {
+                    "source": "main.cpp",
+                    "target": "%{ProjectDirectory}/main.cpp",
+                    "openInEditor": true
+                }
+            ]
+        }
+    ]
+}

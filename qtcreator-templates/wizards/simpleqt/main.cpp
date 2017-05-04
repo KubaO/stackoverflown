@@ -1,3 +1,16 @@
+@if 0
+/* Template Debugging
+ * QT=%{QT}
+ * QT4SUPPORT=%{QT4SUPPORT}
+ * CONSOLE=%{CONSOLE}
+ * CPP11INITS=%{CPP11INITS}
+ * MODULES=%{MODULES}
+ * OBJECT=%{OBJECT}
+ * GITHUBLINK=%{GITHUBLINK}
+ * GITHUBURL=%{GITHUBURL}
+ * SOQUESTION=%{SOQUESTION}
+ */    
+@endif
 @if "%{GITHUBLINK}" == "true"
 // %{GITHUBURL}/%{ProjectName}
 @endif

@@ -7,7 +7,7 @@
 class AppPipe : public QIODevice {
    Q_OBJECT
    QRingBuffer m_buf;
-   void _a_write(const QByteArray & data) {
+   Q_SLOT void _a_write(const QByteArray & data) {
       if (! openMode() & QIODevice::ReadOnly) return; // We must be readable.
       m_buf.append(data);
       emit hasIncoming(data);
@@ -22,18 +22,22 @@ public:
       addOther(other);
    }
    void addOther(AppPipe * other) {
-      if (other) connect(this, &AppPipe::hasOutgoing, other, &AppPipe::_a_write);
+      if (other) {
+          connect(this, &AppPipe::hasOutgoing, other, &AppPipe::_a_write, Qt::UniqueConnection);
+          connect(other, &AppPipe::hasOutgoing, this, &AppPipe::_a_write, Qt::UniqueConnection);
+      }
    }
    void removeOther(AppPipe * other) {
       disconnect(this, &AppPipe::hasOutgoing, other, &AppPipe::_a_write);
+      disconnect(other, &AppPipe::hasOutgoing, this, &AppPipe::_a_write);
    }
    void close() override {
       QIODevice::close();
       m_buf.clear();
    }
    qint64 writeData(const char * data, qint64 maxSize) override {
-      if (!maxSize) return maxSize;
-      hasOutgoing(QByteArray(data, maxSize));
+      if (maxSize > 0)
+         hasOutgoing(QByteArray(data, maxSize));
       return maxSize;
    }
    qint64 readData(char * data, qint64 maxLength) override {
@@ -50,11 +54,13 @@ public:
    Q_SIGNAL void hasIncoming(const QByteArray &);
 };
 
-int main(int argc, char *argv[])
+int main(/*…*/)
 {
-   QCoreApplication a(argc, argv);
-
-   return a.exec();
+   /*…*/
+   AppPipe end1 { nullptr, QIODevice::ReadWrite };
+   AppPipe end2 { &end1, QIODevice::ReadWrite };
+   // the pipes are open ready to use
+   /*…*/
 }
 
 #include "main.moc"

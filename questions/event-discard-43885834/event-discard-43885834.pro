@@ -1,0 +1,6 @@
+QT = widgets 
+CONFIG += c++11
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x050800
+TARGET = event-discard-43885834
+TEMPLATE = app
+SOURCES += main.cpp

@@ -1,0 +1,6 @@
+QT = widgets 
+CONFIG += c++14
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x050800
+TARGET = qobject-pointer-list-43986348
+TEMPLATE = app
+SOURCES += main.cpp

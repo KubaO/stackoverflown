@@ -46,27 +46,36 @@
 namespace StackOverflow {
 namespace Internal {
 
-SOJsExtension::SOJsExtension(QObject *parent) : QObject(parent)
-{}
-
-static QNetworkReply *getData(QNetworkAccessManager *manager, const QUrl &url, int timeout)
+SOJsExtension::CacheItem::CacheItem(const QUrl &url, int timeout, qint64 maxSize) :
+    timeout(timeout),
+    reply(Utils::NetworkAccessManager::instance()->get(QNetworkRequest(url)))
 {
-    // This is not very nice but we don't have much choice.
-    // The only other solution is to use an asynchronous fetch from the wizard page -
-    // it'd be a hack, but a nice hack nevertheless.
     Q_ASSERT(timeout > 0);
-    auto reply = manager->get(QNetworkRequest(url));
-    QEventLoop loop;
-    QTimer::singleShot(timeout, &loop, &QEventLoop::quit);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    if (!reply->isFinished())
-        loop.exec();
-    return reply;
+    auto reply = this->reply.data();
+    QTimer::singleShot(timeout, Qt::CoarseTimer, reply, [reply]{
+        if (!reply->isFinished())
+            reply->abort();
+    });
+    QObject::connect(reply, &QNetworkReply::finished, this, [this]{
+        data = this->reply->readAll();
+    });
+    QObject::connect(reply, &QIODevice::readyRead, this, [reply, maxSize]{
+        if (reply->bytesAvailable() > maxSize)
+            reply->abort();
+    });
 }
 
-static QString decodeEntities(const QString & str)
+void SOJsExtension::CacheItem::waitForFinished() {
+    QEventLoop loop;
+    QObject::connect(reply.data(), &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    if (!reply->isFinished())
+        loop.exec();
+}
+
+static QString decodeEntities(const QString &str)
 {
     QString result;
+    result.reserve(str.size());
     QRegularExpression re("&#([0-9]+);");
     auto it = re.globalMatch(str);
     int lastEnd = 0;
@@ -86,7 +95,8 @@ static QString decodeEntities(const QString & str)
     return result;
 }
 
-static QString decodeQuestion(const QByteArray & json) {
+static QString decodeQuestion(const QByteArray &json)
+{
     auto doc = QJsonDocument::fromJson(json);
     auto obj = doc.object();
     auto items = obj["items"].toArray();
@@ -95,24 +105,78 @@ static QString decodeQuestion(const QByteArray & json) {
     return decodeEntities(body_markdown);
 }
 
-QString SOJsExtension::getQuestionCode(const QString & questionId) {
-    if (questionId.isEmpty())
-        return QString();
-    auto manager = Utils::NetworkAccessManager::instance();
-    QUrl api(QStringLiteral("http://api.stackexchange.com/2.2/questions/%1?"
-                            "order=desc&sort=activity&site=stackoverflow&filter=!VYNqt3Opi")
-             .arg(questionId));
-    QScopedPointer<QNetworkReply> reply(getData(manager, api, 2000));
-    m_status = reply->errorString();
-    if (!reply->isFinished())
-        return QStringLiteral("The network request timed out.");
-    if (reply->error() != QNetworkReply::NoError)
-        return QString();
-    return decodeQuestion(reply->readAll());
+static QUrl questionBodyUrl(qint64 id) {
+    return {QStringLiteral("http://api.stackexchange.com/2.2/questions/%1?"
+                           "order=desc&sort=activity&site=stackoverflow&filter=!VYNqt3Opi")
+                .arg(id)};
 }
 
-QString SOJsExtension::getStatus() const {
-    return m_status;
+static qint64 questionId(const QString &question)
+{
+    bool ok;
+    if (question.isEmpty())
+        return -1;
+
+    // Numerical Id
+    QRegularExpression re("^[0-9]+$");
+    auto match = re.match(question);
+    if (match.hasMatch()) {
+        auto id = question.toLongLong(&ok);
+        return ok ? id : -1;
+    }
+
+    // URL
+    QUrl url(question);
+    if (!url.isValid())
+        return -1;
+    auto scheme = url.scheme().toLower();
+    if (scheme != "http" && scheme != "https")
+        return -1;
+    re = QRegularExpression("^/questions/([0-9]+)/");
+    match = re.match(url.path());
+    if (!match.hasMatch())
+        return -1;
+    auto id = match.captured(1).toLongLong(&ok);
+    return ok ? id : -1;
+}
+
+CachedReply *SOJsExtension::getItem(qint64 id)
+{
+    if (id == -1)
+        return nullptr;
+    return m_cache.getReply(id, {questionBodyUrl(id)}, m_fetchTimeout, m_maxQuestionBodySize);
+    return item;
+}
+
+SOJsExtension::SOJsExtension(QObject *parent) :
+    QObject(parent),
+    m_fetchTimeout(2000)
+{}
+
+bool SOJsExtension::prefetchQuestionBody(const QString &question)
+{
+    auto id = questionId(question);
+    getItem(id);
+    return true;
+}
+
+QString SOJsExtension::getQuestionBody(const QString &question)
+{
+    auto id = questionId(question);
+    auto item = getItem(id);
+    if (!item)
+        return QString();
+    item->waitForFinished();
+    if (item->hasError())
+        return QString();
+    return decodeQuestion(item->data);
+}
+
+QString SOJsExtension::getStatus(const QString &question) const
+{
+    auto id = questionId(question);
+    auto item = m_cache.object(id);
+    return item ? item->reply->errorString() : "Unknown Status";
 }
 
 } // namespace Internal

@@ -72,7 +72,7 @@ int main(int argc, char ** argv) {
 
 @if "%{SOQUESTION}" != ""
 // Code from SO question %{SOQUESTION}
-%{JS: StackOverflow.getQuestionCode("%{SOQUESTION}")}
+%{JS: StackOverflow.getQuestionBody("%{SOQUESTION}")}
 // Status
 %{JS: StackOverflow.getStatus()}
 

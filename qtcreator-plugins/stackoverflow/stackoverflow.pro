@@ -4,11 +4,13 @@ QT += network
 # StackOverflow files
 
 SOURCES += stackoverflowplugin.cpp \
+    networkreplycache.cpp \
     sojsextension.cpp
 
 HEADERS += stackoverflowplugin.h \
     stackoverflow_global.h \
     stackoverflowconstants.h \
+    networkreplycache.h \
     sojsextension.h
 
 OTHER_FILES += StackOverflow.json.in

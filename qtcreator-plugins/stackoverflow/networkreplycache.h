@@ -24,28 +24,32 @@
 
 #pragma once
 
-#include "networkreplycache.h"
+#include <QCache>
+#include <QNetworkReply>
 
 namespace StackOverflow {
 namespace Internal {
 
-class SOJsExtension : public QObject
-{
-    Q_OBJECT
-    Q_PROPERTY(int fetchTimeout READ fetchTimeout WRITE setFetchTimeout)
-public:
-    SOJsExtension(QObject * parent = nullptr);
+struct CachedReply : QObject {
+    // Needs to be a QObject since the reply can outlive it
+    int timeout;
+    qint64 maxSize;
+    QByteArray data;
+    QScopedPointer<QNetworkReply, QScopedPointerDeleteLater> reply;
 
-    Q_INVOKABLE int fetchTimeout() const { return m_fetchTimeout; }
-    Q_INVOKABLE void setFetchTimeout(int ms) { m_fetchTimeout = ms; }
-    Q_INVOKABLE bool prefetchQuestionBody(const QString & question);
-    Q_INVOKABLE QString getQuestionBody(const QString & question);
-    Q_INVOKABLE QString getStatus(const QString & question) const;
-
-private:
-    NetworkReplyCache<qint64> m_cache;
-    int m_fetchTimeout = 3000;
-    qint64 m_maxQuestionBodySize = 128*1024;
-
-    CachedReply * getItem(qint64 id);
+    CachedReply(QNetworkReply * reply, int timeout, qint64 maxSize, QObject *parent = nullptr);
+    bool isFinished() const { return reply && reply->isFinished(); }
+    bool hasError() const { return isFinished() && reply->error() != QNetworkReply::NoError; }
+    void waitForFinished();
 };
+
+template <class Key>
+class NetworkReplyCache : public QCache<Key, CachedReply>
+{
+public:
+    NetworkReplyCache(int maxCost = 1024); // cost in kilobytes
+    CachedReply * getReply(const Key &key, const QNetworkRequest &request, int timeout, qint64 maxSize);
+};
+
+} // namespace Internal
+} // namespace StackOverflow

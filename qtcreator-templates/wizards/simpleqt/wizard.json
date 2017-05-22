@@ -126,11 +126,11 @@
                     "name": "SOQUESTION",
                     "trDisplayName": "Download Code from SO Question",
                     "type": "LineEdit",
-                    "enabled": "%{JS: [ %{Plugins} ].indexOf('StackOverflow') >= 0}",
+                    "enabled": "%{JS: [ %{Plugins} ].indexOf('StackOverflow') >= 0 && StackOverflow.prefetchQuestionBody(%{SOQUESTION})}",
                     "mandatory": false,
                     "data":
                     {
-                        "trPlaceholder": "Enter SO question number"
+                        "trPlaceholder": "SO question number or URL"
                     }
                 }
             ]

@@ -215,11 +215,12 @@ class Ui : public QWidget {
    QLabel m_page{"1"};
    QPushButton m_next{">"};
    QTableView m_view;
-   QPushButton m_remove{"Remove"};
-   QPushButton m_before{"Insert Before"};
-   QPushButton m_after{"Insert After"};
    QPushButton m_up{"Move up"};
    QPushButton m_down{"Move down"};
+   QPushButton m_remove{"Remove"};
+   QSpinBox m_count;
+   QPushButton m_before{"Insert Before"};
+   QPushButton m_after{"Insert After"};
    QAbstractItemModel * model() const { return m_view.model(); }
    const QItemSelection selection() const {
       auto model = m_view.selectionModel();
@@ -237,14 +238,15 @@ class Ui : public QWidget {
    void addRow(int row, int offset) {
       if (!model() || row < 0) return;
       row += offset;
-      if (model()->insertRow(row))
-         model()->setData(model()->index(row, 0),
-                          QStringLiteral("Added %1").arg(++m_addCount));
+      for (auto n = m_count.value(); n; n--, row++)
+         if (model()->insertRow(row))
+            model()->setData(model()->index(row, 0),
+                             QStringLiteral("Added %1").arg(++m_addCount));
    }
-   void moveRows(int offset) {
+   void moveRows(int direction) {
       if (!model() || firstSelectedRow() < 0) return;
-      if (offset > 0)
-         offset += selectionSize();
+      auto moveBy = m_count.value();
+      auto offset = (direction < 0) ? -moveBy : moveBy + selectionSize();
       model()->moveRows({}, firstSelectedRow(), selectionSize(),
                         {}, firstSelectedRow() + offset);
    }
@@ -257,9 +259,14 @@ public:
       m_layout.addWidget(&m_view, 1, 0, 1, 3);
       m_layout.addWidget(&m_up, 2, 0);
       m_layout.addWidget(&m_down, 3, 0);
-      m_layout.addWidget(&m_before, 2, 1);
-      m_layout.addWidget(&m_after, 3, 1);
-      m_layout.addWidget(&m_remove, 2, 2);
+      m_layout.addWidget(&m_remove, 2, 1);
+      m_layout.addWidget(&m_count, 3, 1);
+      m_layout.addWidget(&m_before, 2, 2);
+      m_layout.addWidget(&m_after, 3, 2);
+      m_count.setValue(1);
+      m_count.setMinimum(1);
+      m_count.setMaximum(5);
+      m_count.setPrefix("# ");
       connect(&m_prev, &QPushButton::clicked, this, &Ui::prevPage);
       connect(&m_next, &QPushButton::clicked, this, &Ui::nextPage);
       connect(&m_remove, &QPushButton::clicked, this, [this]{

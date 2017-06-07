@@ -10,16 +10,24 @@ class PagedTableViewModel : public QAbstractProxyModel {
    int m_pageLength = 20;
    int m_rowCountAdjustment = 0;
 protected:
-   bool beginMoveRows(int srcFirst, int count, int dst) {
-      return beginMoveRows({}, srcFirst, srcFirst + count - 1, {}, dst);
+   void moveRows(int src, int count, int dst, bool assertInternal = true) {
+      auto adjDst = src > dst ? dst : dst - count;
+      auto internal = src >= 0 && (src+count) <= m_pageLength
+            && adjDst >= 0 && (adjDst+count) <= m_pageLength;
+      if (assertInternal)
+         Q_ASSERT(internal);
+      if (internal) {
+         auto result = beginMoveRows({}, src, src + count - 1, {}, dst);
+         Q_ASSERT(result);
+      }
+      auto result = sourceModel()->moveRows({}, m_pageRow + src, count, {}, m_pageRow + dst);
+      Q_ASSERT(result);
+      if (internal)
+         endMoveRows();
    }
-   bool sourceMoveRows(int src, int count, int dst) {
-      return sourceModel()->moveRows({}, m_pageRow + src, count, {}, m_pageRow + dst);
-   }
-   using QAbstractProxyModel::beginMoveRows;
 public:
    PagedTableViewModel(QObject * parent = {}) : QAbstractProxyModel(parent) {}
-   explicit PagedTableViewModel(int pageLength, QObject * parent = nullptr) :
+   explicit PagedTableViewModel(int pageLength, QObject * parent = {}) :
       QAbstractProxyModel(parent),  m_pageLength(pageLength) {}
    void setSourceModel(QAbstractItemModel *sourceModel) override {
       beginResetModel();
@@ -149,20 +157,16 @@ bool PagedTableViewModel::removeRows(int row, int count, const QModelIndex &pare
 
 bool PagedTableViewModel::moveRows(const QModelIndex &sourceParent, int src, int count,
                                    const QModelIndex &destinationParent, int dst) {
-   auto const adjDst = src > dst ? dst : dst - 1;
-   if (!sourceModel() || sourceParent.isValid() || src < 0
-       || count < 0 || src+count > rowCount()
-       || destinationParent.isValid()
-       || (m_pageRow+adjDst) < 0
-       || (m_pageRow+adjDst) > sourceModel()->rowCount())
+   auto const adjDst = src > dst ? dst : dst - count;
+   if (!sourceModel() || count < 0 || sourceParent.isValid() || destinationParent.isValid()
+       || src < 0 || src+count > rowCount()
+       || (m_pageRow+adjDst) < 0 || (m_pageRow+adjDst) > sourceModel()->rowCount())
       return false;
-   if (adjDst >= 0 && adjDst < rowCount()) {
+   if (count == 0)
+      return true;
+   if (adjDst >= 0 && (adjDst+count) <= rowCount()) {
       // Destination fits within the page
-      if (!beginMoveRows(src, count, dst))
-         return false;
-      auto result = sourceMoveRows(src, count, dst);
-      Q_ASSERT(result);
-      endMoveRows();
+      moveRows(src, count, dst);
    } else if (dst < 0) {
       // Destination is partially before the page
       int excess = -dst;
@@ -171,25 +175,14 @@ bool PagedTableViewModel::moveRows(const QModelIndex &sourceParent, int src, int
       Q_ASSERT(excess > 0);
       //                                      **************
       // Layout [~excess~] (m_pageRow) [first][excess][last]
-      if (first) {
-         auto result = beginMoveRows(0, first, first+excess+last);
-         Q_ASSERT(result);
-         result = sourceMoveRows(0, first, first + excess + last);
-         Q_ASSERT(result);
-         endMoveRows();
-      }
+      if (first)
+         moveRows(0, first, first + excess + last);
       // Layout [~excess~] (m_pageRow) [excess][last][first]
-      auto result = sourceMoveRows(-excess, excess, excess);
-      Q_ASSERT(result);
+      moveRows(-excess, excess, excess, false);
       emit dataChanged(index(0, 0), index(excess - 1, 0));
       // Layout [excess] (m_pageRow) [~excess~][last][first]
-      if (last) {
-         auto result = beginMoveRows(excess, last, 0);
-         Q_ASSERT(result);
-         result = sourceMoveRows(excess, last, 0);
-         Q_ASSERT(result);
-         endMoveRows();
-      }
+      if (last)
+         moveRows(excess, last, 0);
       //        ***************************
       // Layout [excess] (m_pageRow) [last][~excess~][first]
    } else {
@@ -200,24 +193,14 @@ bool PagedTableViewModel::moveRows(const QModelIndex &sourceParent, int src, int
       Q_ASSERT(excess > 0);
       //        ***************
       // Layout [first][excess][last] (nextPageRow) [~excess~]
-      if (last) {
-         auto result = beginMoveRows(src+count, last, src);
-         Q_ASSERT(result);
-         result = sourceMoveRows(src+count, last, src);
-         endMoveRows();
-      }
+      if (last)
+         moveRows(src + count, last, src);
       // Layout [last][first][excess] (nextPageRow) [~excess~]
-      auto result = sourceMoveRows(m_pageLength, excess, m_pageLength-excess);
-      Q_ASSERT(result);
+      moveRows(m_pageLength, excess, m_pageLength-excess, false);
       emit dataChanged(index(m_pageLength-excess, 0), index(m_pageLength-1, 0));
       // Layout [last][first][~excess] (nextPageRow) [excess]
-      if (first) {
-         auto result = beginMoveRows(m_pageLength-excess, excess, m_pageLength-excess-first);
-         Q_ASSERT(result);
-         result = sourceMoveRows(m_pageLength-excess, excess, m_pageLength-excess-first);
-         Q_ASSERT(result);
-         endMoveRows();
-      }
+      if (first)
+         moveRows(m_pageLength - excess, excess, m_pageLength - excess - first);
       //                        ******************************
       // Layout [last][~excess~][first] (nextPageRow) [excess]
    }
@@ -262,7 +245,8 @@ class Ui : public QWidget {
       if (!model() || firstSelectedRow() < 0) return;
       if (offset > 0)
          offset += selectionSize();
-      model()->moveRows({}, firstSelectedRow(), selectionSize(), {}, firstSelectedRow()+offset);
+      model()->moveRows({}, firstSelectedRow(), selectionSize(),
+                        {}, firstSelectedRow() + offset);
    }
 public:
    Ui() {
@@ -302,20 +286,20 @@ public:
 template <typename C>
 void move_range(size_t start, size_t length, size_t dst, C & data)
 {
-    typename C::iterator first, middle, last;
-    if (start < dst)
-    {
-        first  = data.begin() + start;
-        middle = first + length;
-        last   = data.begin() + dst;
-    }
-    else
-    {
-        first  = data.begin() + dst;
-        middle = data.begin() + start;
-        last   = middle + length;
-    }
-    std::rotate(first, middle, last);
+   typename C::iterator first, middle, last;
+   if (start < dst)
+   {
+      first  = data.begin() + start;
+      middle = first + length;
+      last   = data.begin() + dst;
+   }
+   else
+   {
+      first  = data.begin() + dst;
+      middle = data.begin() + start;
+      last   = middle + length;
+   }
+   std::rotate(first, middle, last);
 }
 
 class StringListModel : public QAbstractListModel {

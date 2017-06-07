@@ -9,6 +9,14 @@ class PagedTableViewModel : public QAbstractProxyModel {
    int m_pageRow = 0;
    int m_pageLength = 20;
    int m_rowCountAdjustment = 0;
+protected:
+   bool beginMoveRows(int srcFirst, int count, int dst) {
+      return beginMoveRows({}, srcFirst, srcFirst + count - 1, {}, dst);
+   }
+   bool sourceMoveRows(int src, int count, int dst) {
+      return sourceModel()->moveRows({}, m_pageRow + src, count, {}, m_pageRow + dst);
+   }
+   using QAbstractProxyModel::beginMoveRows;
 public:
    PagedTableViewModel(QObject * parent = {}) : QAbstractProxyModel(parent) {}
    explicit PagedTableViewModel(int pageLength, QObject * parent = nullptr) :
@@ -82,112 +90,139 @@ public:
    Q_SIGNAL void pageLengthChanged(int pageLength);
    Q_SLOT void nextPage() { setPage(page() + 1); }
    Q_SLOT void prevPage() { setPage(page() - 1); }
-   bool removeRows(int row, int count, const QModelIndex &parent = {}) override {
-      if (!sourceModel() || parent.isValid() || row < 0 || row >= rowCount())
-         return false;
-      count = std::min(count, rowCount() - row);
-      if (count <= 0)
-         return false;
-      bool onlyRemove = row + count >= rowCount();
-      if (onlyRemove)
-         beginRemoveRows({}, row, row+count-1);
-      else {
-         auto allow = beginMoveRows({}, row+count, rowCount()-1, {}, row);
-         Q_ASSERT(allow);
-      }
-      m_rowCountAdjustment = -count;
-      bool result = sourceModel()->removeRows(m_pageRow + row, count);
-      Q_ASSERT(result); // TODO: support undoing the removal
-      if (onlyRemove)
-         endRemoveRows();
-      else
-         endMoveRows();
-      auto prevRowCount = rowCount();
-      m_rowCountAdjustment = 0;
-      auto added = rowCount() - prevRowCount;
-      if (added) {
-         m_rowCountAdjustment = -count;
-         beginInsertRows({}, rowCount(), rowCount()+added-1);
-         m_rowCountAdjustment = 0;
-         endInsertRows();
-      }
-      Q_ASSERT(!m_rowCountAdjustment);
-      return true;
-   }
-   bool insertRows(int row, int count, const QModelIndex &parent = {}) override {
-      if (!sourceModel() || parent.isValid() || row < 0 || row > rowCount())
-         return false;
-      int excessCount = std::max(0, rowCount()+count-m_pageLength);
-      beginInsertRows({}, row, row+count-1);
-      auto result = sourceModel()->insertRows(m_pageRow + row, count);
-      Q_ASSERT(result);
-      m_rowCountAdjustment = excessCount;
-      endInsertRows();
-      if (excessCount) {
-         beginRemoveRows({}, m_pageLength, m_pageLength + excessCount - 1);
-         m_rowCountAdjustment = 0;
-         endRemoveRows();
-      }
-      Q_ASSERT(!m_rowCountAdjustment);
-      return true;
-   }
+   bool insertRows(int row, int count, const QModelIndex &parent = {}) override;
+   bool removeRows(int row, int count, const QModelIndex &parent = {}) override;
    bool moveRows(const QModelIndex &sourceParent, int src, int count,
-                 const QModelIndex &destinationParent, int dst) override {
-      auto const adjDst = src > dst ? dst : dst - 1;
-      if (!sourceModel() || sourceParent.isValid() || src < 0
-          || count < 0 || src+count > rowCount()
-          || destinationParent.isValid()
-          || (m_pageRow+adjDst) < 0
-          || (m_pageRow+adjDst) > sourceModel()->rowCount())
-         return false;
-      if (adjDst >= 0 && adjDst < rowCount()) {
-         // Destination fits within the page
-         if (!beginMoveRows({}, src, src + count - 1, {}, dst))
-            return false;
-         auto result = sourceModel()->moveRows({}, m_pageRow + src, count,
-                                               {}, m_pageRow + dst);
-         Q_ASSERT(result);
-         endMoveRows();
-      } else if (dst < 0) {
-         // Destination is partially prior to the page
-         int excess = -dst;
-         int first = src;
-         int last = count-excess;
-         Q_ASSERT(excess > 0);
-         // Layout [~excess~] (m_pageRow) [first][excess][last]
-         if (first) {
-            if (!beginMoveRows({}}))
-         }
-         // Layout [~excess~] (m_pageRow) [excess][last][first]
-
-         if (!beginMoveRows({}, src+excess, src+count-1, {}, 0))
-            return false;
-         auto result = sourceModel()->moveRows({}, m_pageRow + src + excess, last,
-                                               {}, m_pageRow + 0);
-         Q_ASSERT(result);
-         endMoveRows();
-         // Layout [~excess~] (m_pageRow) [*last*][first][excess]
-         if (first) {
-            if (!beginMoveRows({}, last+first, last+first+excess-1, {}, last))
-               return false;
-            result = sourceModel()->moveRows({}, m_pageRow + last+first, excess,
-                                             {}, m_pageRow + last);
-            Q_ASSERT(result);
-            endMoveRows();
-         }
-         // Layout [~excess~] (m_pageRow) [last][*excess*][first]
-         result = sourceModel()->moveRows({}, m_pageRow + last, excess,
-                                          {}, m_pageRow - excess);
-         Q_ASSERT(result);
-         emit dataChanged(index(last, 0), index(last+excess-1, 0));
-         // Layout [*excess*] (m_pageRow) [last][~excess~][first]
-      } else {
-         int excess = dst + count - rowCount();
-         Q_ASSERT(excess > 0);
-      }
-      return true;
-   }
+                 const QModelIndex &destinationParent, int dst) override;
 };
+
+bool PagedTableViewModel::insertRows(int row, int count, const QModelIndex &parent) {
+   if (!sourceModel() || parent.isValid() || row < 0 || row > rowCount())
+      return false;
+   int excess = std::max(0, rowCount()+count-m_pageLength);
+   beginInsertRows({}, row, row+count-1);
+   auto result = sourceModel()->insertRows(m_pageRow + row, count);
+   Q_ASSERT(result);
+   m_rowCountAdjustment = excess;
+   endInsertRows();
+   if (excess) {
+      beginRemoveRows({}, m_pageLength, m_pageLength + excess - 1);
+      m_rowCountAdjustment = 0;
+      endRemoveRows();
+   }
+   Q_ASSERT(!m_rowCountAdjustment);
+   return true;
+}
+
+bool PagedTableViewModel::removeRows(int row, int count, const QModelIndex &parent) {
+   if (!sourceModel() || parent.isValid() || row < 0 || row >= rowCount())
+      return false;
+   count = std::min(count, rowCount() - row);
+   if (count <= 0)
+      return false;
+   bool onlyRemove = row + count >= rowCount();
+   if (onlyRemove)
+      beginRemoveRows({}, row, row+count-1);
+   else {
+      auto allow = beginMoveRows({}, row+count, rowCount()-1, {}, row);
+      Q_ASSERT(allow);
+   }
+   m_rowCountAdjustment = -count;
+   bool result = sourceModel()->removeRows(m_pageRow + row, count);
+   Q_ASSERT(result); // TODO: support undoing the removal
+   if (onlyRemove)
+      endRemoveRows();
+   else
+      endMoveRows();
+   auto prevRowCount = rowCount();
+   m_rowCountAdjustment = 0;
+   auto added = rowCount() - prevRowCount;
+   if (added) {
+      m_rowCountAdjustment = -count;
+      beginInsertRows({}, rowCount(), rowCount()+added-1);
+      m_rowCountAdjustment = 0;
+      endInsertRows();
+   }
+   Q_ASSERT(!m_rowCountAdjustment);
+   return true;
+}
+
+bool PagedTableViewModel::moveRows(const QModelIndex &sourceParent, int src, int count,
+                                   const QModelIndex &destinationParent, int dst) {
+   auto const adjDst = src > dst ? dst : dst - 1;
+   if (!sourceModel() || sourceParent.isValid() || src < 0
+       || count < 0 || src+count > rowCount()
+       || destinationParent.isValid()
+       || (m_pageRow+adjDst) < 0
+       || (m_pageRow+adjDst) > sourceModel()->rowCount())
+      return false;
+   if (adjDst >= 0 && adjDst < rowCount()) {
+      // Destination fits within the page
+      if (!beginMoveRows(src, count, dst))
+         return false;
+      auto result = sourceMoveRows(src, count, dst);
+      Q_ASSERT(result);
+      endMoveRows();
+   } else if (dst < 0) {
+      // Destination is partially before the page
+      int excess = -dst;
+      int first = src;
+      int last = count - excess;
+      Q_ASSERT(excess > 0);
+      //                                      **************
+      // Layout [~excess~] (m_pageRow) [first][excess][last]
+      if (first) {
+         auto result = beginMoveRows(0, first, first+excess+last);
+         Q_ASSERT(result);
+         result = sourceMoveRows(0, first, first + excess + last);
+         Q_ASSERT(result);
+         endMoveRows();
+      }
+      // Layout [~excess~] (m_pageRow) [excess][last][first]
+      auto result = sourceMoveRows(-excess, excess, excess);
+      Q_ASSERT(result);
+      emit dataChanged(index(0, 0), index(excess - 1, 0));
+      // Layout [excess] (m_pageRow) [~excess~][last][first]
+      if (last) {
+         auto result = beginMoveRows(excess, last, 0);
+         Q_ASSERT(result);
+         result = sourceMoveRows(excess, last, 0);
+         Q_ASSERT(result);
+         endMoveRows();
+      }
+      //        ***************************
+      // Layout [excess] (m_pageRow) [last][~excess~][first]
+   } else {
+      // Destination is partially after the page
+      int excess = dst - m_pageLength;
+      int first = count - excess;
+      int last = m_pageLength - src - count;
+      Q_ASSERT(excess > 0);
+      //        ***************
+      // Layout [first][excess][last] (nextPageRow) [~excess~]
+      if (last) {
+         auto result = beginMoveRows(src+count, last, src);
+         Q_ASSERT(result);
+         result = sourceMoveRows(src+count, last, src);
+         endMoveRows();
+      }
+      // Layout [last][first][excess] (nextPageRow) [~excess~]
+      auto result = sourceMoveRows(m_pageLength, excess, m_pageLength-excess);
+      Q_ASSERT(result);
+      emit dataChanged(index(m_pageLength-excess, 0), index(m_pageLength-1, 0));
+      // Layout [last][first][~excess] (nextPageRow) [excess]
+      if (first) {
+         auto result = beginMoveRows(m_pageLength-excess, excess, m_pageLength-excess-first);
+         Q_ASSERT(result);
+         result = sourceMoveRows(m_pageLength-excess, excess, m_pageLength-excess-first);
+         Q_ASSERT(result);
+         endMoveRows();
+      }
+      //                        ******************************
+      // Layout [last][~excess~][first] (nextPageRow) [excess]
+   }
+   return true;
+}
 
 class Ui : public QWidget {
    Q_OBJECT
@@ -225,7 +260,6 @@ class Ui : public QWidget {
    }
    void moveRows(int offset) {
       if (!model() || firstSelectedRow() < 0) return;
-      qDebug() << firstSelectedRow() << selectionSize() << firstSelectedRow()+offset;
       if (offset > 0)
          offset += selectionSize();
       model()->moveRows({}, firstSelectedRow(), selectionSize(), {}, firstSelectedRow()+offset);

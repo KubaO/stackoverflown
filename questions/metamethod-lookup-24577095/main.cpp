@@ -1,7 +1,5 @@
-#include <QCoreApplication>
-#include <QMetaObject>
-#include <QMetaMethod>
-#include <QDebug>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/metamethod-lookup-24577095
+#include <QtCore>
 
 class MyObject : public QObject {
    Q_OBJECT
@@ -15,10 +13,10 @@ public:
 
 template <typename Func> int indexOfMethod(Func method)
 {
-   typedef QtPrivate::FunctionPointer<Func> FuncType;
+   using FuncType = QtPrivate::FunctionPointer<Func>;
    int methodIndex = -1;
    void *metaArgs[] = {&methodIndex, reinterpret_cast<void **>(&method)};
-   const QMetaObject & mo = FuncType::Object::staticMetaObject;
+   auto mo = FuncType::Object::staticMetaObject;
    mo.static_metacall(QMetaObject::IndexOfMethod, 0, metaArgs);
    return methodIndex;
 }
@@ -26,8 +24,8 @@ template <typename Func> int indexOfMethod(Func method)
 int main(int argc, char *argv[])
 {
    QCoreApplication a(argc, argv);
-   qDebug() << indexOfMethod(&MyObject::aSlot) << indexOfMethod(&MyObject::aSlot3) << indexOfMethod(&MyObject::aSignal2);
+   qDebug() << indexOfMethod(&MyObject::aSlot)
+            << indexOfMethod(&MyObject::aSlot3) << indexOfMethod(&MyObject::aSignal2);
    return 0;
 }
-
 #include "main.moc"

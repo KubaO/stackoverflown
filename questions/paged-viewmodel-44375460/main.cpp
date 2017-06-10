@@ -10,10 +10,14 @@ class PagedTableViewModel : public QAbstractProxyModel {
    int m_pageLength = 20;
    int m_rowCountAdjustment = 0;
 protected:
-   void moveRows(int src, int count, int dst, bool assertInternal = true) {
-      auto adjDst = src > dst ? dst : dst - count;
+   void moveRows(int & src_, int const count, int & dst_, bool assertInternal = true) {
+      using std::swap;
+      swap(src_, dst_);
+      auto src = src_, dst = dst_;
+      if (src < dst)
+         swap(src, dst);
       auto internal = src >= 0 && (src+count) <= m_pageLength
-            && adjDst >= 0 && (adjDst+count) <= m_pageLength;
+            && dst >= 0 && (dst+count) <= m_pageLength;
       if (assertInternal)
          Q_ASSERT(internal);
       if (internal) {
@@ -157,53 +161,38 @@ bool PagedTableViewModel::removeRows(int row, int count, const QModelIndex &pare
 
 bool PagedTableViewModel::moveRows(const QModelIndex &sourceParent, int src, int count,
                                    const QModelIndex &destinationParent, int dst) {
-   auto const adjDst = src > dst ? dst : dst - count;
+   // All positions are independent of whether dst leads or trails src
+   if (dst > src) dst -= count;
    if (!sourceModel() || count < 0 || sourceParent.isValid() || destinationParent.isValid()
        || src < 0 || src+count > rowCount()
-       || (m_pageRow+adjDst) < 0 || (m_pageRow+adjDst) > sourceModel()->rowCount())
+       || (m_pageRow+dst) < 0 || (m_pageRow+dst) > sourceModel()->rowCount())
       return false;
    if (count == 0)
       return true;
-   if (adjDst >= 0 && (adjDst+count) <= rowCount()) {
-      // Destination fits within the page
-      moveRows(src, count, dst);
-   } else if (dst < 0) {
-      // Destination is partially before the page
-      int excess = -dst;
-      int first = src;
-      int last = count - excess;
-      Q_ASSERT(excess > 0);
-      //                                      **************
-      // Layout [~excess~] (m_pageRow) [first][excess][last]
-      if (first)
-         moveRows(0, first, first + excess + last);
-      // Layout [~excess~] (m_pageRow) [excess][last][first]
-      moveRows(-excess, excess, excess, false);
-      emit dataChanged(index(0, 0), index(excess - 1, 0));
-      // Layout [excess] (m_pageRow) [~excess~][last][first]
-      if (last)
-         moveRows(excess, last, 0);
-      //        ***************************
-      // Layout [excess] (m_pageRow) [last][~excess~][first]
-   } else {
-      // Destination is partially after the page
-      int excess = dst - m_pageLength;
-      int first = count - excess;
-      int last = m_pageLength - src - count;
-      Q_ASSERT(excess > 0);
-      //        ***************
-      // Layout [first][excess][last] (nextPageRow) [~excess~]
-      if (last)
-         moveRows(src + count, last, src);
-      // Layout [last][first][excess] (nextPageRow) [~excess~]
-      moveRows(m_pageLength, excess, m_pageLength-excess, false);
-      emit dataChanged(index(m_pageLength-excess, 0), index(m_pageLength-1, 0));
-      // Layout [last][first][~excess] (nextPageRow) [excess]
-      if (first)
-         moveRows(m_pageLength - excess, excess, m_pageLength - excess - first);
-      //                        ******************************
-      // Layout [last][~excess~][first] (nextPageRow) [excess]
+
+   // Decompose into two moves:
+   // first - the part moved outside the page
+   // second - the part remaining within the page
+   // [outside] | [inside][first][second] -or- [second][first][inside] | [outside]
+   auto const outside_len = std::max(-dst, 0) + std::max(dst + count - m_pageLength, 0);
+   auto const down = dst < 0;
+   auto const first_len = outside_len;
+   auto const second_len = count - first_len;
+   auto second_pos = down ? src + first_len : src;
+   if (outside_len) {
+      auto first_pos = down ? src : src + first_len;
+      auto boundary_pos = down ? 0 : m_pageLength - first_len;
+      auto outside_pos = down ? dst : m_pageLength;
+      moveRows(first_pos, first_len, boundary_pos);
+      // [outside] | [first][inside][second] -or- [second][inside][first] | [outside]
+      moveRows(first_pos, first_len, outside_pos, false);
+      // [first] | [outside][inside][second] -or- [second][inside][outside] | [first]
+      if (first_len && columnCount())
+         emit dataChanged(index(outside_pos, 0), index(outside_pos, columnCount() - 1));
    }
+   auto final_pos = down ? dst + first_len : dst;
+   moveRows(second_pos, second_len, final_pos);
+   // [first] | [second][outside][inside] -or- [inside][outside][second] | [first]
    return true;
 }
 

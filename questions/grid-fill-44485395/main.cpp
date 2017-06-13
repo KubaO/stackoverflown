@@ -25,10 +25,12 @@ template <typename C> int LCM(const C & c) {
    });
 }
 
+#if 0
 template <typename T> void appendUnique(QVector<T> & dst, const T & src) {
    if (!dst.contains(src))
       dst.append(src);
 }
+#endif
 
 template <typename T> void appendUnique(QVector<T> & dst, const QVector<T> & src) {
    for (auto & s : src)
@@ -80,8 +82,8 @@ public:
    Grid(int rows, int columns, const T & val = {}) :
       m_rows(rows), m_columns(columns), m_data(rows*columns, val) {}
    void add(int row, int col, int rowSpan, int colSpan, const T & val) {
-      for (int r = row; r < rowSpan; ++r)
-         for (int c = col; c < colSpan; ++c)
+      for (int r = row; r < row + rowSpan; ++r)
+         for (int c = col; c < col + colSpan; ++c)
             at(r, c) = val;
    }
    T & at(int row, int col) { return m_data[col*m_rows + row]; }
@@ -109,15 +111,56 @@ public:
    bool operator==(const Grid & o) const {
       return m_rows == o.m_rows && m_columns == o.m_columns && m_data == o.m_data;
    }
+   int rowCount() const { return m_rows; }
+   int columnCount() const { return m_columns; }
+   const QVector<T> & data() const { return m_data; }
+   bool anyEmpty(int row, int col, int rowSpan, int colSpan) const {
+      for (int r = row; r < row+rowSpan; ++r)
+         for (int c = col; c < col+colSpan; ++c)
+            if (at(r,c).begin() == at(r,c).end())
+               return true;
+      return false;
+   }
 };
+
+QDebug operator<<(QDebug dbg, const Grid<QVector<int>> & g) {
+   QDebugStateSaver saver(dbg);
+   dbg.nospace() << "Grid{";
+   for (int r = 0; r < g.rowCount(); ++r) {
+      dbg << "[";
+      for (int c = 0; c < g.columnCount(); ++c) {
+         auto const & cell = g.at(r, c);
+         if (cell.isEmpty())
+            dbg << "-";
+         else if (cell.size() == 1)
+            dbg << cell[0];
+         else {
+            dbg << "(";
+            for (int i = 0; i < cell.size(); ++i) {
+               dbg << cell[i];
+               if (i < cell.size() - 1) dbg << ",";
+            }
+            dbg << ")";
+         }
+         if (c < g.columnCount()-1) dbg << ",";
+      }
+      dbg << ((r < g.rowCount()-1) ? "], " : "]");
+   }
+   return dbg << "}";
+}
 
 class FillGridLayout : public QGridLayout {
    Q_OBJECT
    struct Item {
       QLayoutItem * item;
-      // only spacers are owned by the underlying layout
-      bool isOwned() const { return item->layout() || item->widget(); }
       int row, col, rowSpan, colSpan;
+      bool isInvisible() const {
+         return item && item->widget() && !item->widget()->isVisible();
+      }
+      // only spacers are owned by the underlying layout
+      bool isOwned() const {
+         return item && (item->layout() || item->widget());
+      }
    };
    using Items = QVector<Item>;
    using Indexes = QVector<int>;
@@ -125,96 +168,55 @@ class FillGridLayout : public QGridLayout {
    int m_rows, m_columns; // original layout
    Items m_items;
 
-   struct Fill {
-      QVector<int> indexes;
-      int row, col, rowSpan, colSpan;
-      bool operator==(const Fill & o) const {
-         return row == o.row && col == o.col
-               && rowSpan == o.rowSpan && colSpan == o.colSpan && indexes == o.indexes;
-      }
-   };
-   using Fills = QVector<Fill>;
-
-   Items take() {
-      Items items;
-      while (itemAt(0)) {
-         Item d;
-         getItemPosition(0, &d.row, &d.col, &d.rowSpan, &d.colSpan);
-         d.item = takeAt(0);
-         items.append(d);
-      }
-      return items;
-   }
-   Fills itemsToFills(const Items & items) {
-      Fills fills;
-      int i = 0;
-      for (auto & item : items) {
-         Fill f;
-         f.indexes.append(i++);
-         f.row = item.row;
-         f.col = item.col;
-         f.rowSpan = item.rowSpan;
-         f.colSpan = item.colSpan;
-         fills.append(f);
-      }
-      return fills;
-   }
-   QVector<Fills> findAllFills(const Fills & fills) {
-      QVector<Fills> all;
-      for (int i = 0; i < fills.count(); ++i) {
-         auto row = rowFill(i, fills);
-         auto column = columnFill(i, fills);
-         if (!row.isEmpty())
-            appendUnique(all, findAllFills(row));
-         if (!column.isEmpty())
-            appendUnique(all, findAllFills(column));
-      }
-      return all;
-   }
-   int fillAt(int row, int col, const Fills & fills) {
-      int i = 0;
-      for (auto & f : fills) {
-         if (f.row <= row && f.row + f.rowSpan >= row
-             && f.col <= col && f.col + f.colSpan >= col)
-            return i;
-         i++;
-      }
-      return -1;
-   }
-   Fills rowFill(int f, Fills fills) {
-      int row = fills.at(f).row;
-      int col = fills.at(f).col;
-      for (int i = col+1; i < m_columns; ++i) {
-         int j = fillAt(row, i, fills);
-         auto & can = fills.at(j);
-         //if (can.rowSpan == )
-      }
-   }
-   Fills columnFill(int f, Fills fills) {
-
-   }
-
    using AGrid = Grid<Indexes>;
    using Grids = QVector<AGrid>;
 
+   Item getItemAt(int i) const {
+      Item d;
+      getItemPosition(i, &d.row, &d.col, &d.rowSpan, &d.colSpan);
+      d.item = itemAt(i);
+      return d;
+   }
+   Items peek() const {
+      Items items;
+      for (int i = 0; i < count(); ++i)
+         items.append(getItemAt(i));
+      return items;
+   }
+   Items take() {
+      Items items;
+      while (itemAt(0)) {
+         auto item = getItemAt(0);
+         items.append(item);
+         takeAt(0);
+      }
+      return items;
+   }
    AGrid getGrid() const {
       AGrid grid(m_rows, m_columns);
       int i = 0;
-      for (auto & item : m_items)
-         grid.add(item.row, item.col, item.rowSpan, item.colSpan, {i++});
+      for (auto & item : m_items) {
+         if (!item.isInvisible())
+            grid.add(item.row, item.col, item.rowSpan, item.colSpan, {i});
+         i++;
+      }
       return grid;
    }
    Grids findAllGrids(const AGrid & grid) {
-      Grids grids;
+      static int level;
+      Grids grids(1, grid);
+      ++level;
       for (int r = 0; r < m_rows; ++r)
          for (int c = 0; c < m_columns; ++c) {
-            auto row = rowFillGrid(r, c, grid);
-            auto col = colFillGrid(r, c, grid);
-            if (!row.isEmpty())
-               appendUnique(grids, findAllGrids(grid));
-            if (!col.isEmpty())
-               appendUnique(grids, findAllGrids(grid));
+            auto rowGrid = rowFillGrid(r, c, grid);
+            auto colGrid = colFillGrid(r, c, grid);
+            qDebug() << level << r << c << rowGrid << colGrid;
+            if (!rowGrid.isEmpty())
+               appendUnique(grids, findAllGrids(rowGrid));
+            if (!colGrid.isEmpty())
+               appendUnique(grids, findAllGrids(colGrid));
          }
+      --level;
       return grids;
    }
    AGrid rowFillGrid(int row, int col, AGrid grid) const {
@@ -230,11 +232,13 @@ class FillGridLayout : public QGridLayout {
          return (next.isEmpty() && nextSpan.contains(rowSpan)) ||
                (!next.isEmpty() && nextSpan == rowSpan);
       };
-      int left = col, right = col;
-      for (; check(left-1); left--)
-         appendUnique(indexes, grid.at(row, left-1));
-      for (; check(right+1); right++)
-         appendUnique(indexes, grid.at(row, right+1));
+      int left = col, right = col+1;
+      for (; check(left-1); left--);
+      for (; check(right); right++);
+      if (!grid.anyEmpty(row, left, 1, right-left))
+         return {};
+      for (int c = left; c < right; c++)
+         appendUnique(indexes, grid.at(row, c));
       grid.add(rowSpan.left, left, rowSpan.size(), right-left, indexes);
       return grid;
    }
@@ -251,11 +255,13 @@ class FillGridLayout : public QGridLayout {
          return (next.isEmpty() && nextSpan.contains(colSpan)) ||
                (!next.isEmpty() && nextSpan == colSpan);
       };
-      int top = row, bottom = row;
-      for (; check(top-1); top--)
-         appendUnique(indexes, grid.at(top-1, col));
-      for (; check(bottom+1); bottom++)
-         appendUnique(indexes, grid.at(bottom+1, col));
+      int top = row, bottom = row+1;
+      for (; check(top-1); top--);
+      for (; check(bottom); bottom++);
+      if (!grid.anyEmpty(top, col, bottom-top, 1))
+         return {};
+      for (int r = top; r < bottom; r++)
+         appendUnique(indexes, grid.at(r, col));
       grid.add(top, colSpan.left, bottom-top, colSpan.size(), indexes);
       return grid;
    }
@@ -263,6 +269,7 @@ class FillGridLayout : public QGridLayout {
 public:
    FillGridLayout(QWidget * parent = {}) : QGridLayout(parent) {}
    ~FillGridLayout() {
+      return;
       for (auto & item : m_items)
          if (item.isOwned())
             delete item.item;
@@ -270,7 +277,10 @@ public:
    void convert() {
       m_rows = rowCount();
       m_columns = columnCount();
-      m_items = take();
+      m_items = peek();
+      auto grid = getGrid();
+      qDebug() << grid;
+      qDebug() << findAllGrids(grid);
    }
    void refill() {
 
@@ -278,16 +288,19 @@ public:
 };
 
 class TestUi : public QWidget {
-   QHBoxLayout m_layout{this};
+   QGridLayout m_layout{this};
    QGridLayout m_left;
    FillGridLayout m_right;
+   QPushButton m_regen{"Regen"};
 public:
    TestUi(int rows, int columns) {
-      m_layout.addLayout(&m_left);
-      m_layout.addLayout(&m_right);
+      m_layout.addLayout(&m_left, 0, 0);
+      m_layout.addLayout(&m_right, 0, 1);
+      m_layout.addWidget(&m_regen, 1, 0);
       for (int i = 0; i < rows; i ++)
          for (int j = 0; j < columns; j++)
             add(i, j, rows);
+      connect(&m_regen, &QPushButton::clicked, [this]{ m_right.convert(); });
    }
    void add(int r, int c, int rows) {
       auto text = QString::number(c*rows + r);
@@ -304,7 +317,7 @@ public:
 
 int main(int argc, char ** argv) {
    QApplication app(argc, argv);
-   TestUi ui(3, 4);
+   TestUi ui(3, 3);
    ui.show();
    auto r = {1,2,3,4};
    qDebug() << LCM(r);

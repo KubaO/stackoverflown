@@ -4,13 +4,6 @@
 #include <cstdlib>
 #include <set>
 
-#if 0
-template <typename T> void appendUnique(QVector<T> & dst, const T & src) {
-   if (!dst.contains(src))
-      dst.append(src);
-}
-#endif
-
 template <typename T> void appendUnique(QVector<T> & dst, const QVector<T> & src) {
    for (auto & s : src)
       if (!dst.contains(s))
@@ -21,30 +14,24 @@ struct OpenRange {
    int left = {}, right = {};
    OpenRange() = default;
    OpenRange(const OpenRange & o) { *this = o; }
-   OpenRange(int left, int right) : left(left), right(right) { Q_ASSERT(left <= right); }
+   OpenRange(int left, int right) : left(left), right(right) {}
    bool operator==(const OpenRange & o) const {
-      Q_ASSERT(left <= right && o.left <= o.right);
       return left == o.left && right == o.right;
    }
    OpenRange & operator=(const OpenRange & o) {
-      Q_ASSERT(left <= right && o.left <= o.right);
       left = o.left;
       right = o.right;
       return *this;
    }
    OpenRange & operator&=(const OpenRange & o) {
-      Q_ASSERT(left <= right && o.left <= o.right);
       left = qBound(left, std::max(left, o.left), right);
       right = qBound(left, std::min(right, o.right), right);
       return *this;
-
    }
    bool contains(const OpenRange & o) const {
-      Q_ASSERT(left <= right && o.left <= o.right);
       return !o.size() || (left <= o.left && right >= o.right);
    }
    int size() const {
-      Q_ASSERT(left <= right);
       return right - left;
    }
 };
@@ -106,6 +93,8 @@ public:
                return true;
       return false;
    }
+   int rowCount() const { return m_rows; }
+   int columnCount() const { return m_columns; }
 };
 
 QDebug operator<<(QDebug dbg, const Grid & g) {
@@ -273,37 +262,95 @@ public:
    }
 };
 
+void clearWidgets(QLayout * layout) {
+   while (auto item = layout->takeAt(0)) {
+      delete item->widget();
+      delete item;
+   }
+}
+
 class TestUi : public QWidget {
    QGridLayout m_layout{this};
+   QPlainTextEdit m_source;
    QGridLayout m_left;
    FillGridLayout m_right;
+   QPushButton m_reset{"Reset"};
    QPushButton m_regen{"Regen"};
-public:
-   TestUi(int rows, int columns) {
-      m_layout.addLayout(&m_left, 0, 0);
-      m_layout.addLayout(&m_right, 0, 1);
-      m_layout.addWidget(&m_regen, 1, 0);
-      for (int i = 0; i < rows; i ++)
-         for (int j = 0; j < columns; j++)
-            add(i, j, rows);
-      connect(&m_regen, &QPushButton::clicked, [this]{ m_right.convert(); });
+   int toIndex(QChar c) {
+      if (c >= '0' && c <= '9') return c.unicode() - '0';
+      if (c >= 'A' && c <= 'Z') return c.unicode() + 10 - 'A';
+      return -1;
    }
-   void add(int r, int c, int rows) {
-      auto text = QString::number(c*rows + r);
+   Grid gridFromText(const QString & str) {
+      auto lines = str.toUpper().split('\n', QString::SkipEmptyParts);
+      int rows = lines.size();
+      int columns = 0;
+      for (auto & line : lines) {
+         while (line.endsWith(' ')) line.chop(1);
+         columns = std::max(columns, line.size());
+      }
+      Grid grid(rows, columns);
+      for (int r = 0; r < rows; ++r) {
+         auto const & line = lines[r];
+         for (int c = 0; c < line.size(); ++c) {
+            int i = toIndex(line[c]);
+            if (i >= 0)
+               grid.add(r, c, 1, 1, {i});
+         }
+      }
+      return grid;
+   }
+   void reset() {
+      clearWidgets(&m_left);
+      clearWidgets(&m_right);
+      auto grid = gridFromText(m_source.toPlainText());
+      Fill added;
+      for (int r = 0; r < grid.rowCount(); r++)
+         for (int c = 0; c < grid.columnCount(); c++)
+            if (!grid.anyEmpty(r, c, 1, 1)) {
+               auto index = *grid.at(r, c).begin();
+               if (!added.count(index)) {
+                  auto rows = grid.rowSpan(r, c);
+                  auto cols = grid.colSpan(r, c);
+                  add(index, rows.left, cols.left, rows.size(), cols.size());
+                  added.insert(index);
+               }
+            }
+   }
+   void add(int index, int r, int c, int rowSpan, int colSpan) {
+      auto text = QString::number(index);
       auto button = new QPushButton{text};
       auto label = new QLabel{text};
       button->setCheckable(true);
       button->setChecked(true);
       label->setFrameStyle(QFrame::Box | QFrame::Plain);
       connect(button, &QPushButton::toggled, label, &QLabel::setVisible);
-      m_left.addWidget(button, r, c);
-      m_right.addWidget(label, r, c);
+      m_left.addWidget(button, r, c, rowSpan, colSpan);
+      m_right.addWidget(label, r, c, rowSpan, colSpan);
+   }
+public:
+   TestUi() {
+      m_layout.addWidget(&m_source, 0, 0);
+      m_layout.addLayout(&m_left, 0, 1);
+      m_layout.addLayout(&m_right, 0, 2);
+      m_layout.addWidget(&m_reset, 1, 0);
+      m_layout.addWidget(&m_regen, 1, 1);
+      m_source.setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+      connect(&m_reset, &QPushButton::clicked, this, &TestUi::reset);
+      connect(&m_regen, &QPushButton::clicked, [this]{ m_right.convert(); });
+      auto format = m_source.currentCharFormat();
+      auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+      font.setPointSize(13);
+      format.setFont(font);
+      m_source.setCurrentCharFormat(format);
+      m_source.setPlainText("036\n147\n258");
+      reset();
    }
 };
 
 int main(int argc, char ** argv) {
    QApplication app(argc, argv);
-   TestUi ui(3, 3);
+   TestUi ui;
    ui.show();
    return app.exec();
 }

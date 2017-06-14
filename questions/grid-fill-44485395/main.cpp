@@ -2,28 +2,7 @@
 #include <QtWidgets>
 #include <algorithm>
 #include <cstdlib>
-
-int GCD(int a, int b) {
-   while (b) {
-      auto r = a % b;
-      a = b;
-      b = r;
-   }
-   return a;
-}
-
-int rangeLCM(int begin, int end) {
-   int lcm = 1;
-   for (int i = begin; i < end; ++i)
-      lcm = std::abs(lcm * i) / GCD(lcm, i);
-   return lcm;
-}
-
-template <typename C> int LCM(const C & c) {
-   return std::accumulate(c.begin(), c.end(), 1, [](int a, int b){
-      return std::abs(a * b) / GCD(a, b);
-   });
-}
+#include <set>
 
 #if 0
 template <typename T> void appendUnique(QVector<T> & dst, const T & src) {
@@ -72,23 +51,29 @@ struct OpenRange {
 
 OpenRange operator&(OpenRange l, const OpenRange & r) { return l &= r; }
 
+using Fill = std::set<int>;
 
-template <typename T> class Grid {
+void insert(Fill & dst, const Fill & src) {
+   dst.insert(src.begin(), src.end());
+}
+
+class Grid {
    int m_rows = {};
    int m_columns = {};
-   QVector<T> m_data;
+   QVector<Fill> m_data;
+   friend QDebug operator<<(QDebug, const Grid &);
 public:
    Grid() = default;
-   Grid(int rows, int columns, const T & val = {}) :
+   Grid(int rows, int columns, const Fill & val = {}) :
       m_rows(rows), m_columns(columns), m_data(rows*columns, val) {}
-   void add(int row, int col, int rowSpan, int colSpan, const T & val) {
+   void add(int row, int col, int rowSpan, int colSpan, const Fill & val) {
       for (int r = row; r < row + rowSpan; ++r)
          for (int c = col; c < col + colSpan; ++c)
             at(r, c) = val;
    }
-   T & at(int row, int col) { return m_data[col*m_rows + row]; }
-   const T & at(int row, int col) const { return m_data.at(col*m_rows + row); }
-   T get(int row, int col) const { return at(row, col); }
+   Fill & at(int row, int col) { return m_data[col*m_rows + row]; }
+   const Fill & at(int row, int col) const { return m_data.at(col*m_rows + row); }
+   Fill get(int row, int col) const { return at(row, col); }
    OpenRange rowSpan(int row, int col) const {
       auto & val = at(row, col);
       OpenRange span(row, row+1);
@@ -111,9 +96,9 @@ public:
    bool operator==(const Grid & o) const {
       return m_rows == o.m_rows && m_columns == o.m_columns && m_data == o.m_data;
    }
-   int rowCount() const { return m_rows; }
-   int columnCount() const { return m_columns; }
-   const QVector<T> & data() const { return m_data; }
+   bool anyEmpty() const {
+      return anyEmpty(0, 0, m_rows, m_columns);
+   }
    bool anyEmpty(int row, int col, int rowSpan, int colSpan) const {
       for (int r = row; r < row+rowSpan; ++r)
          for (int c = col; c < col+colSpan; ++c)
@@ -123,28 +108,29 @@ public:
    }
 };
 
-QDebug operator<<(QDebug dbg, const Grid<QVector<int>> & g) {
+QDebug operator<<(QDebug dbg, const Grid & g) {
    QDebugStateSaver saver(dbg);
    dbg.nospace() << "Grid{";
-   for (int r = 0; r < g.rowCount(); ++r) {
+   for (int r = 0; r < g.m_rows; ++r) {
       dbg << "[";
-      for (int c = 0; c < g.columnCount(); ++c) {
+      for (int c = 0; c < g.m_columns; ++c) {
          auto const & cell = g.at(r, c);
-         if (cell.isEmpty())
+         if (cell.empty())
             dbg << "-";
          else if (cell.size() == 1)
-            dbg << cell[0];
+            dbg << *cell.begin();
          else {
             dbg << "(";
-            for (int i = 0; i < cell.size(); ++i) {
-               dbg << cell[i];
-               if (i < cell.size() - 1) dbg << ",";
+            unsigned int i = 0;
+            for (auto v : cell) {
+               dbg << v;
+               if (i++ < cell.size() - 1) dbg << ",";
             }
             dbg << ")";
          }
-         if (c < g.columnCount()-1) dbg << ",";
+         if (c < g.m_columns-1) dbg << ",";
       }
-      dbg << ((r < g.rowCount()-1) ? "], " : "]");
+      dbg << ((r < g.m_rows-1) ? "], " : "]");
    }
    return dbg << "}";
 }
@@ -163,13 +149,11 @@ class FillGridLayout : public QGridLayout {
       }
    };
    using Items = QVector<Item>;
-   using Indexes = QVector<int>;
 
    int m_rows, m_columns; // original layout
    Items m_items;
 
-   using AGrid = Grid<Indexes>;
-   using Grids = QVector<AGrid>;
+   using Grids = QVector<Grid>;
 
    Item getItemAt(int i) const {
       Item d;
@@ -192,8 +176,8 @@ class FillGridLayout : public QGridLayout {
       }
       return items;
    }
-   AGrid getGrid() const {
-      AGrid grid(m_rows, m_columns);
+   Grid getGrid() const {
+      Grid grid(m_rows, m_columns);
       int i = 0;
       for (auto & item : m_items) {
          if (!item.isInvisible())
@@ -202,9 +186,11 @@ class FillGridLayout : public QGridLayout {
       }
       return grid;
    }
-   Grids findAllGrids(const AGrid & grid) {
+   Grids findAllGrids(const Grid & grid) {
+      if (!grid.anyEmpty())
+         return Grids(1, grid);
       static int level;
-      Grids grids(1, grid);
+      Grids grids;
       ++level;
       for (int r = 0; r < m_rows; ++r)
          for (int c = 0; c < m_columns; ++c) {
@@ -219,9 +205,9 @@ class FillGridLayout : public QGridLayout {
       --level;
       return grids;
    }
-   AGrid rowFillGrid(int row, int col, AGrid grid) const {
-      auto indexes = grid.at(row, col);
-      if (indexes.isEmpty())
+   Grid rowFillGrid(int row, int col, Grid grid) const {
+      auto fill = grid.at(row, col);
+      if (fill.empty())
          return {};
       auto const rowSpan = grid.rowSpan(row, col);
       auto const check = [this, row, rowSpan, &grid](int col){
@@ -229,8 +215,8 @@ class FillGridLayout : public QGridLayout {
             return false;
          auto next = grid.at(row, col);
          auto nextSpan = grid.rowSpan(row, col);
-         return (next.isEmpty() && nextSpan.contains(rowSpan)) ||
-               (!next.isEmpty() && nextSpan == rowSpan);
+         return (next.empty() && nextSpan.contains(rowSpan)) ||
+               (!next.empty() && nextSpan == rowSpan);
       };
       int left = col, right = col+1;
       for (; check(left-1); left--);
@@ -238,13 +224,13 @@ class FillGridLayout : public QGridLayout {
       if (!grid.anyEmpty(row, left, 1, right-left))
          return {};
       for (int c = left; c < right; c++)
-         appendUnique(indexes, grid.at(row, c));
-      grid.add(rowSpan.left, left, rowSpan.size(), right-left, indexes);
+         insert(fill, grid.at(row, c));
+      grid.add(rowSpan.left, left, rowSpan.size(), right-left, fill);
       return grid;
    }
-   AGrid colFillGrid(int row, int col, AGrid grid) const {
-      auto indexes = grid.at(row, col);
-      if (indexes.isEmpty())
+   Grid colFillGrid(int row, int col, Grid grid) const {
+      auto fill = grid.at(row, col);
+      if (fill.empty())
          return {};
       auto const colSpan = grid.colSpan(row, col);
       auto const check = [this, col, colSpan, &grid](int row){
@@ -252,8 +238,8 @@ class FillGridLayout : public QGridLayout {
             return false;
          auto next = grid.at(row, col);
          auto nextSpan = grid.colSpan(row, col);
-         return (next.isEmpty() && nextSpan.contains(colSpan)) ||
-               (!next.isEmpty() && nextSpan == colSpan);
+         return (next.empty() && nextSpan.contains(colSpan)) ||
+               (!next.empty() && nextSpan == colSpan);
       };
       int top = row, bottom = row+1;
       for (; check(top-1); top--);
@@ -261,8 +247,8 @@ class FillGridLayout : public QGridLayout {
       if (!grid.anyEmpty(top, col, bottom-top, 1))
          return {};
       for (int r = top; r < bottom; r++)
-         appendUnique(indexes, grid.at(r, col));
-      grid.add(top, colSpan.left, bottom-top, colSpan.size(), indexes);
+         insert(fill, grid.at(r, col));
+      grid.add(top, colSpan.left, bottom-top, colSpan.size(), fill);
       return grid;
    }
 
@@ -280,7 +266,7 @@ public:
       m_items = peek();
       auto grid = getGrid();
       qDebug() << grid;
-      qDebug() << findAllGrids(grid);
+      qDebug() << grid << "->" << findAllGrids(grid);
    }
    void refill() {
 
@@ -319,8 +305,6 @@ int main(int argc, char ** argv) {
    QApplication app(argc, argv);
    TestUi ui(3, 3);
    ui.show();
-   auto r = {1,2,3,4};
-   qDebug() << LCM(r);
    return app.exec();
 }
 #include "main.moc"

@@ -44,6 +44,11 @@ void insert(Fill & dst, const Fill & src) {
    dst.insert(src.begin(), src.end());
 }
 
+struct GridItem {
+   Fill fill;
+   int row, col, rowSpan, colSpan;
+};
+
 class Grid {
    int m_rows = {};
    int m_columns = {};
@@ -95,6 +100,22 @@ public:
    }
    int rowCount() const { return m_rows; }
    int columnCount() const { return m_columns; }
+   QVector<GridItem> getItems() const {
+      QVector<GridItem> items;
+      std::set<int> indexes;
+      for (int r = 0; r < m_rows; ++r)
+         for (int c = 0; c < m_columns; ++c) {
+            auto const fill = at(r, c);
+            if (fill.empty() || indexes.count(*fill.begin()))
+               continue;
+            for (auto i : fill) {
+               Q_ASSERT(!indexes.count(i));
+               indexes.insert(i);
+            }
+            items.append({fill, r, c, rowSpan(r,c).size(), colSpan(r,c).size()});
+         }
+      return items;
+   }
 };
 
 QDebug operator<<(QDebug dbg, const Grid & g) {
@@ -127,42 +148,30 @@ QDebug operator<<(QDebug dbg, const Grid & g) {
 class FillGridLayout : public QGridLayout {
    Q_OBJECT
    struct Item {
-      QLayoutItem * item;
+      Item() = default;
+      Item(const Item &) = default;
+      Item(Item &&) = defualt;
+      Item(QLayout * layout, int index) {
+         layout->getItemPosition(index, &row, &col, &rowSpan, &colSpan);
+         item.reset(layout->takeAt(index));
+      }
+      QSharedPointer<QLayoutItem> item;
       int row, col, rowSpan, colSpan;
       bool isInvisible() const {
          return item && item->widget() && !item->widget()->isVisible();
-      }
-      // only spacers are owned by the underlying layout
-      bool isOwned() const {
-         return item && (item->layout() || item->widget());
       }
    };
    using Items = QVector<Item>;
 
    int m_rows, m_columns; // original layout
-   Items m_items;
+   Items m_items; // items from the original layout
 
    using Grids = QVector<Grid>;
 
-   Item getItemAt(int i) const {
-      Item d;
-      getItemPosition(i, &d.row, &d.col, &d.rowSpan, &d.colSpan);
-      d.item = itemAt(i);
-      return d;
-   }
-   Items peek() const {
-      Items items;
-      for (int i = 0; i < count(); ++i)
-         items.append(getItemAt(i));
-      return items;
-   }
    Items take() {
       Items items;
-      while (itemAt(0)) {
-         auto item = getItemAt(0);
-         items.append(item);
-         takeAt(0);
-      }
+      while (itemAt(0))
+         items.append({this, 0});
       return items;
    }
    Grid getGrid() const {
@@ -240,6 +249,12 @@ class FillGridLayout : public QGridLayout {
       grid.add(top, colSpan.left, bottom-top, colSpan.size(), fill);
       return grid;
    }
+   Grid solution(const Grid & src) {
+      struct {
+         Fill items;
+         int row, col, rowSpan, ColSpan;
+      };
+   }
 
 public:
    FillGridLayout(QWidget * parent = {}) : QGridLayout(parent) {}
@@ -252,13 +267,16 @@ public:
    void convert() {
       m_rows = rowCount();
       m_columns = columnCount();
-      m_items = peek();
+      m_items = take();
       auto grid = getGrid();
       qDebug() << grid;
       qDebug() << grid << "->" << findAllGrids(grid);
    }
    void refill() {
 
+   }
+   QLayoutItem * takeAt(int index) override {
+      auto item =
    }
 };
 

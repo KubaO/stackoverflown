@@ -2,9 +2,9 @@ Since you're adding additional edges into the grid, you have to convert the orig
 
 I've written a solution for that some time ago. Below are my notes and code extract.
 
-A general approach might be to iterate over all items, and for each item whose row/column spans gaps, generate a new fill that fills the gaps, then recurse into the layout. This will generate multiple alternative fills, and which one ends up chosen is arbitrary. For the chosen fill, new rows/columns have to be generated to fulfill the constraints. This will be the solution. An additional simplification pass can remove rows/columns that consist only of span extensions.
+A general approach might be to iterate over all items, and for each item whose row/column spans gaps, generate a new fill that fills the gaps, then recurse into the layout. This will generate multiple alternative fills, and which one ends up chosen is arbitrary. For the chosen fill, final rows/columns have to be generated to fulfill the constraints. This will be the solution.
 
-Let's look at examples. We'll consider all possible paths, noting that several of them are equivalent. Subsequences of non-interacting fills that yield same fills are considered equivalent, e.g. below 0 row, 2 row is equivalent to 2 row, 0 row. First, a dense layout without spans:
+Let's look at an example. We'll consider all possible paths, noting that several of them are equivalent. Subsequences of non-interacting fills that yield same fills are considered equivalent, e.g. below (0 row, 2 row) is equivalent to (2 row, 0 row). First, a dense layout without spans:
 
     [0]---[6]
     [1][4][7]
@@ -20,13 +20,24 @@ Let's look at examples. We'll consider all possible paths, noting that several o
                 [1][4][7]  [1][4  ][7]
                 [2][5]| |  [2][5  ]| |
 
-    6 column    0 row      solution   simplified
-    [0]---[6]   [0   ][6]  [0   ][6]  [0   ][6]  4x3=12
-    [1][4]|7|   [1][4]|7|  |    || |  [1][4]| |
-    [2][5]| |   [2][5]| |  [1][4]| |  | || |[7]
-                           | || |[7]  [2][5]| |
+    2 row      4 column   solution
+    [0]---[6]  [0][4][6]  [0][4  ][6] 3x4=12
+    [1][4][7]  [1]| |[7]  [1]|   |[7]
+    [25     ]  [25     ]  [2  ][5   ]
+
+    6 column    0 row      solution
+    [0]---[6]   [0   ][6]  [0   ][6] 4x3=12
+    [1][4]|7|   [1][4]|7|  [1][4]| |
+    [2][5]| |   [2][5]| |  | || |[7]
                            [2][5]| |
-                           | || || |
+
+                4 column   solution
+                [0][4][6]  [0][4][6] 4x3=12
+                [1]|5||7|  [1]| || |
+                [2]| || |  | |[5][7]
+                           [2]| || |
+
+
 
 A sparser layout with spans:
 
@@ -115,4 +126,3 @@ And thus the solution:
     00 [0   ][6   ]
     01 [1][4   ][7]
     02 [2   ][5   ]
-

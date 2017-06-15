@@ -49,6 +49,9 @@ struct OpenRange {
    int size() const {
       return right - left;
    }
+   OpenRange scaled(int factor) const {
+      return { left*factor, right*factor };
+   }
    struct iterator {
       friend struct OpenRange;
       int value;
@@ -85,14 +88,45 @@ void insert(Fill & dst, const Fill & src) {
 struct GridItem {
    Fill fill;
    OpenRange rows, columns;
+   int denominator = 1;
    int row() const { return rows.left; }
    int column() const { return columns.left; }
    int rowSpan() const { return rows.size(); }
    int colSpan() const { return columns.size(); }
    int index() const { Q_ASSERT(fill.size() == 1); return *fill.begin(); }
+   bool empty() const { return fill.empty(); }
+   const OpenRange & range(Fill::Type type) const {
+      Q_ASSERT(type != Fill::Type::None);
+      return type == Fill::Type::Row ? rows : columns;
+   }
+   OpenRange & range(Fill::Type type) {
+      Q_ASSERT(type != Fill::Type::None);
+      return type == Fill::Type::Row ? rows : columns;
+   }
+   OpenRange & range() { return range(fill.type); }
    GridItem() = default;
    GridItem(const Fill & fill, const OpenRange & rows, const OpenRange & cols) :
       fill(fill), rows(rows), columns(cols) {}
+   QVector<GridItem> split() const {
+      if (empty())
+         return {};
+      if (fill.type == Fill::Type::None || fill.size() == 1)
+         return {*this}; // nothing to split
+      QVector<GridItem> items;
+      auto item = *this;
+      item.denominator = item.fill.size();
+      auto const fill = item.fill;
+      auto & range = item.range();
+      auto const size = range.size();
+      auto pos = range.left * item.denominator;
+      for (auto index : fill) {
+         item.fill = {index};
+         range = {pos, pos+size};
+         items.append(item);
+         pos += size;
+      }
+      return items;
+   }
 };
 
 class Grid {
@@ -151,7 +185,7 @@ public:
    }
    int rowCount() const { return m_rows; }
    int columnCount() const { return m_columns; }
-   QVector<GridItem> getItems() const {
+   QVector<GridItem> toItems() const {
       QVector<GridItem> items;
       std::set<int> indexes;
       for (int r = 0; r < m_rows; ++r)
@@ -166,6 +200,17 @@ public:
             items.append(item);
          }
       return items;
+   }
+   static Grid fromItems(const QVector<GridItem> & items) {
+      int rows = 0, columns = 0;
+      for (auto & item : items) {
+         rows = std::max(rows, item.rows.right);
+         columns = std::max(columns, item.columns.right);
+      }
+      Grid grid(rows, columns);
+      for (auto & item : items)
+         grid.add(item.rows, item.columns, item.fill);
+      return grid;
    }
 };
 
@@ -253,14 +298,14 @@ class FillGridLayout : public QGridLayout {
       }
       return grid;
    }
-   Grids findAllGrids(const Grid & grid) {
+   static Grids findAllGrids(const Grid & grid) {
       if (!grid.anyEmpty())
          return Grids(1, grid); // this is a solution
       static int level;
       Grids grids;
       ++level;
-      for (int r = 0; r < m_rows; ++r)
-         for (int c = 0; c < m_columns; ++c) {
+      for (int r = 0; r < grid.rowCount(); ++r)
+         for (int c = 0; c < grid.columnCount(); ++c) {
             auto rowGrid = rowFillGrid(r, c, grid);
             auto colGrid = colFillGrid(r, c, grid);
             qDebug() << level << r << c << rowGrid << colGrid;
@@ -272,18 +317,17 @@ class FillGridLayout : public QGridLayout {
       --level;
       return grids;
    }
-   Grid rowFillGrid(int row, int col, Grid grid) const {
-      auto fill = grid.at(row, col);
-      if (fill.empty())
+   static Grid rowFillGrid(int row, int col, Grid grid) {
+      auto item = grid.itemAt(row, col);
+      if (item.empty())
          return {};
-      auto const rows = grid.rowSpan(row, col);
-      auto const check = [this, row, rows, &grid](int col){
-         if (col < 0 || col >= m_columns)
+      auto const check = [row, &item, &grid](int col){
+         if (col < 0 || col >= grid.columnCount())
             return false;
          auto next = grid.at(row, col);
          auto nextSpan = grid.rowSpan(row, col);
-         return (next.empty() && nextSpan.contains(rows)) ||
-               (!next.empty() && nextSpan == rows);
+         return (next.empty() && nextSpan.contains(item.rows)) ||
+               (!next.empty() && nextSpan == item.rows);
       };
       OpenRange cols(col, col+1);
       for (; check(cols.left-1); cols.left--);
@@ -291,23 +335,22 @@ class FillGridLayout : public QGridLayout {
       if (!grid.anyEmpty(row, cols.left, 1, cols.size()))
          return {};
       for (auto c : cols)
-         insert(fill, grid.at(row, c));
-      fill.type = Fill::Type::Row;
-      grid.add(rows, cols, fill);
+         insert(item.fill, grid.at(row, c));
+      item.fill.type = Fill::Type::Row;
+      grid.add(item.rows, cols, item.fill);
       return grid;
    }
-   Grid colFillGrid(int row, int col, Grid grid) const {
-      auto fill = grid.at(row, col);
-      if (fill.empty())
+   static Grid colFillGrid(int row, int col, Grid grid) {
+      auto item = grid.itemAt(row, col);
+      if (item.empty())
          return {};
-      auto const cols = grid.colSpan(row, col);
-      auto const check = [this, col, cols, &grid](int row){
-         if (row < 0 || row >= m_rows)
+      auto const check = [col, &item, &grid](int row){
+         if (row < 0 || row >= grid.rowCount())
             return false;
          auto next = grid.at(row, col);
          auto nextSpan = grid.colSpan(row, col);
-         return (next.empty() && nextSpan.contains(cols)) ||
-               (!next.empty() && nextSpan == cols);
+         return (next.empty() && nextSpan.contains(item.columns)) ||
+               (!next.empty() && nextSpan == item.columns);
       };
       OpenRange rows(row, row+1);
       for (; check(rows.left-1); rows.left--);
@@ -315,26 +358,43 @@ class FillGridLayout : public QGridLayout {
       if (!grid.anyEmpty(rows.left, col, rows.size(), 1))
          return {};
       for (auto r : rows)
-         insert(fill, grid.at(r, col));
-      fill.type = Fill::Type::Column;
-      grid.add(rows, cols, fill);
+         insert(item.fill, grid.at(r, col));
+      item.fill.type = Fill::Type::Column;
+      grid.add(rows, item.columns, item.fill);
       return grid;
    }
-   Grid solution(const Grid & src) {
-      auto const input = src.getItems();
-      QVector<GridItem> output;
-#if 0
-      std::set<int> denoms;
-      for (auto & item : items)
-         denoms.insert(item.fill.size());
-      auto denom = LCM(denoms.begin(), denoms.end());
-      for (auto & item : items) {
-
-      }
-#endif
-
+   static Grid solution(const Grid & src) {
+      QVector<GridItem> items;
+      for (auto item : src.toItems())
+         items.append(item.split());
+      solve(items, Fill::Type::Row);
+      solve(items, Fill::Type::Column);
+      return Grid::fromItems(items);
    }
-
+   static void solve(QVector<GridItem> & items, Fill::Type type) {
+      std::set<int> denominators;
+      for (auto const & item : items)
+         denominators.insert(item.denominator);
+      auto const denominator = LCM(denominators.begin(), denominators.end());
+      std::set<int> coordinates;
+      for (auto const & item : items) {
+         Q_ASSERT(denominator % item.denominator == 0);
+         auto range = item.range(type).scaled(denominator / item.denominator);
+         coordinates.insert(range.left);
+         coordinates.insert(range.right);
+      }
+      QVector<int> coordinateMap(*coordinates.rbegin() + 1, -1);
+      int i = 0;
+      for (auto coord : coordinates)
+         coordinateMap[coord] = i++;
+      for (auto & item : items) {
+         auto & range = item.range(type);
+         auto srcRange = range.scaled(denominator / item.denominator);
+         range.left = coordinateMap[srcRange.left];
+         range.right = coordinateMap[srcRange.right];
+         Q_ASSERT(range.left >= 0 && range.right >= 0);
+      }
+   }
 public:
    FillGridLayout(QWidget * parent = {}) : QGridLayout(parent) {}
    void convert() {
@@ -342,9 +402,13 @@ public:
       m_columns = columnCount();
       m_items = peek();
       auto const grid = getGrid();
-      auto const grids = findAllGrids(grid);
-      qDebug() << grid << "->" << grids;
-
+      auto const simpleGrid = solution(grid);
+      qDebug() << "1." << grid << "->" << simpleGrid;
+      auto grids = findAllGrids(simpleGrid);
+      qDebug() << "2." << simpleGrid << "->" << grids;
+      for (auto & grid : grids)
+         grid = solution(grid);
+      qDebug() << "3." << simpleGrid << "->" << grids;
    }
    void refill() {
 

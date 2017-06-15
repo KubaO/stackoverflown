@@ -76,6 +76,9 @@ struct Fill : std::set<int> {
    Fill(int index) : std::set<int>{index} {}
    Fill & operator=(const Fill &) = default;
    Fill & operator=(Fill &&) = default;
+   Type otherType() const {
+      return (type == Type::Row) ? Type::Column : (type == Type::Column) ? Type::Row : type;
+   }
    bool operator==(const Fill & o) const {
       return o.type == type && o == static_cast<const std::set<int>&>(*this);
    }
@@ -103,7 +106,6 @@ struct GridItem {
       Q_ASSERT(type != Fill::Type::None);
       return type == Fill::Type::Row ? rows : columns;
    }
-   OpenRange & range() { return range(fill.type); }
    GridItem() = default;
    GridItem(const Fill & fill, const OpenRange & rows, const OpenRange & cols) :
       fill(fill), rows(rows), columns(cols) {}
@@ -116,7 +118,7 @@ struct GridItem {
       auto item = *this;
       item.denominator = item.fill.size();
       auto const fill = item.fill;
-      auto & range = item.range();
+      auto & range = item.range(fill.otherType());
       auto const size = range.size();
       auto pos = range.left * item.denominator;
       for (auto index : fill) {

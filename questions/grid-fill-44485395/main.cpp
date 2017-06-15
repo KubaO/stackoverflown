@@ -310,7 +310,8 @@ class FillGridLayout : public QGridLayout {
          for (int c = 0; c < grid.columnCount(); ++c) {
             auto rowGrid = rowFillGrid(r, c, grid);
             auto colGrid = colFillGrid(r, c, grid);
-            qDebug() << level << r << c << rowGrid << colGrid;
+            if (true && (!rowGrid.isEmpty() || !colGrid.isEmpty()))
+               qDebug() << level << r << c << rowGrid << colGrid;
             if (!rowGrid.isEmpty())
                appendUnique(grids, findAllGrids(rowGrid));
             if (!colGrid.isEmpty())

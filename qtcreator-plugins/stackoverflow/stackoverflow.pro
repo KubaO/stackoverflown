@@ -18,15 +18,15 @@ OTHER_FILES += StackOverflow.json.in
 # Qt Creator source [linked] in ~/Qt/qt-creator-opensource-src-4
 # Qt Creator binary [linked] in ~/bin/QtCreator[.app]
 
-## Either set the IDE_SOURCE_TREE when running qmake,
-## or set the QTC_SOURCE environment variable, to override the default setting
+## To override the default setting, either set the IDE_SOURCE_TREE when running qmake,
+## or set the QTC_SOURCE environment variable.
 isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = $$(QTC_SOURCE)
 isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = $$(HOME)/Qt/qt-creator-opensource-src-4
 
-## Either set the IDE_BUILD_TREE when running qmake,
-## or set the QTC_BUILD environment variable, to override the default setting
+## To override the default setting, either set the IDE_BUILD_TREE when running qmake,
+## or set the QTC_BUILD environment variable.
 isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
-isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(HOME)
+isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(HOME)/Qt/qt-creator-4
 
 ## uncomment to build plugin into user config directory
 ## <localappdata>/plugins/<ideversion>

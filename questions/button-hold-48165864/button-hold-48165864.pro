@@ -1,0 +1,5 @@
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x050800
+TARGET = button-hold-48165864
+QT += widgets
+TEMPLATE = app
+SOURCES += main.cpp

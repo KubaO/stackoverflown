@@ -1,0 +1,5 @@
+QT = widgets
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x050800
+TARGET = painting-app-48520925
+TEMPLATE = app
+SOURCES += main.cpp

@@ -1,4 +1,5 @@
-#define SOL1 // 0..6
+// https://github.com/KubaO/stackoverflown/tree/master/questions/metacall-21646467
+#define SOL0 // 0..6
 
 #ifdef SOL0
 #define STANDALONE
@@ -6,25 +7,67 @@
 #include <type_traits>
 
 // Qt 5/4 - preferred, has least allocations
+
+namespace detail {
 template <typename F>
-static void postToThread(F && fun, QObject * obj = qApp) {
-   struct Event : public QEvent {
-      using Fun = typename std::decay<F>::type;
-      Fun fun;
-      Event(Fun && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
-      Event(const Fun & fun) : QEvent(QEvent::None), fun(fun) {}
-      ~Event() { fun(); }
-   };
-   QCoreApplication::postEvent(obj, new Event(std::forward<F>(fun)));
+struct FEvent : public QEvent {
+   using Fun = typename std::decay<F>::type;
+   Fun fun;
+   FEvent(Fun && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
+   FEvent(const Fun & fun) : QEvent(QEvent::None), fun(fun) {}
+   ~FEvent() { fun(); }
+}; }
+
+template <typename F>
+static void postToObject(F && fun, QObject * obj = qApp) {
+   if (qobject_cast<QThread*>(obj))
+      qWarning() << "posting a call to a thread object - consider using postToThread";
+   QCoreApplication::postEvent(obj, new detail::FEvent<F>(std::forward<F>(fun)));
+}
+
+template <typename F>
+static void postToThread(F && fun, QThread * thread = qApp->thread()) {
+   QObject * obj = QAbstractEventDispatcher::instance(thread);
+   Q_ASSERT(obj);
+   QCoreApplication::postEvent(obj, new detail::FEvent<F>(std::forward<F>(fun)));
 }
 
 #if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
 // Qt 5 - alternative version
+
 template <typename F>
-static void postToThread2(F && fun, QObject * obj = qApp) {
+static void postToObject2(F && fun, QObject * obj = qApp) {
+   if (qobject_cast<QThread*>(obj))
+      qWarning() << "posting a call to a thread object - consider using postToThread";
    QObject src;
    QObject::connect(&src, &QObject::destroyed, obj, std::forward<F>(fun),
                     Qt::QueuedConnection);
+}
+
+template <typename F>
+static void postToThread2(F && fun, QThread * thread = qApp->thread()) {
+   QObject * obj = QAbstractEventDispatcher::instance(thread);
+   Q_ASSERT(obj);
+   QObject src;
+   QObject::connect(&src, &QObject::destroyed, obj, std::forward<F>(fun),
+                    Qt::QueuedConnection);
+}
+
+void test0() {
+   QThread t;
+   QObject o;
+   o.moveToThread(&t);
+
+   // Execute in given object's thread
+   postToObject2([&]{ o.setObjectName("hello"); }, &o);
+   // or
+   postToObject2(std::bind(&QObject::setObjectName, &o, "hello"), &o);
+
+   // Execute in given thread
+   postToThread2([]{ qDebug() << "hello from worker thread"; });
+
+   // Execute in the main thread
+   postToThread2([]{ qDebug() << "hello from main thread"; });
 }
 #endif
 
@@ -34,17 +77,21 @@ void test1() {
    o.moveToThread(&t);
 
    // Execute in given object's thread
-   postToThread([&]{ o.setObjectName("hello"); }, &o);
+   postToObject([&]{ o.setObjectName("hello"); }, &o);
    // or
-   postToThread(std::bind(&QObject::setObjectName, &o, "hello"), &o);
+   postToObject(std::bind(&QObject::setObjectName, &o, "hello"), &o);
+
+   // Execute in given thread
+   postToThread([]{ qDebug() << "hello from worker thread"; });
 
    // Execute in the main thread
-   postToThread([]{ qDebug() << "hello"; });
+   postToThread([]{ qDebug() << "hello from main thread"; });
 }
 
 // Qt 5/4
+
 template <typename T, typename R>
-static void postToThread(T * obj, R(T::* method)()) {
+static void postToObject(T * obj, R(T::* method)()) {
    struct Event : public QEvent {
       T * obj;
       R(T::* method)();
@@ -52,8 +99,11 @@ static void postToThread(T * obj, R(T::* method)()) {
          QEvent(QEvent::None), obj(obj), method(method) {}
       ~Event() { (obj->*method)(); }
    };
+   if (qobject_cast<QThread*>(obj))
+      qWarning() << "posting a call to a thread object - this may be a bug";
    QCoreApplication::postEvent(obj, new Event(obj, method));
 }
+
 
 void test2() {
    QThread t;
@@ -61,11 +111,10 @@ void test2() {
    obj.moveToThread(&t);
 
    // Execute in obj's thread
-   postToThread(&obj, &MyObject::method);
+   postToObject(&obj, &MyObject::method);
 }
 
-int main(int argc, char ** argv) {
-}
+int main() {}
 
 #endif
 

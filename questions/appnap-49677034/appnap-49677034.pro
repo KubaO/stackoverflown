@@ -1,0 +1,7 @@
+CONFIG += c++17
+QT = widgets
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x050800
+macx: LIBS = -lobjc
+TARGET = appnap-49677034
+TEMPLATE = app
+SOURCES += main.cpp

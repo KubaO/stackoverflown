@@ -37,36 +37,26 @@ int main() {
    Q_ASSERT((result.results() == QStringList{"10", "20", "30"}));
 }
 
-// Include code https://stackoverflow.com/q/43560492/1329652
+// See code in https://stackoverflow.com/q/43560492/1329652
 #include <utility>
+#include <type_traits>
 
 template <class T> struct function_traits : function_traits<decltype(&T::operator())> {};
 
 template <typename ClassType, typename ReturnType, typename... Args>
 struct function_traits<ReturnType(ClassType::*)(Args...) const> {
    // specialization for pointers to member function
-   using functor_type = ClassType;
    using result_type = ReturnType;
-   using arg_tuple = std::tuple<Args...>;
-   static constexpr auto arity = sizeof...(Args);
 };
 
-template <class Callable, class... Args>
+template <class Callable>
 struct CallableWrapper : Callable, function_traits<Callable> {
    CallableWrapper(const Callable &f) : Callable(f) {}
    CallableWrapper(Callable &&f) : Callable(std::move(f)) {}
 };
 
-template <class F, std::size_t ... Is, class T>
-auto wrap_impl(F f, std::index_sequence<Is...>, T) {
-   return CallableWrapper<F, typename T::result_type,
-         std::tuple_element_t<Is, typename T::arg_tuple>...>(std::forward<F>(f));
-}
-
-template <class F>
-auto wrap(F f) {
-   using traits = function_traits<F>;
-   return wrap_impl(std::forward<F>(f), std::make_index_sequence<traits::arity>{}, traits{});
+template <class F> auto wrap(F &&f) {
+   return CallableWrapper<F>(std::forward<F>(f));
 }
 // end function_traits code
 
@@ -81,13 +71,13 @@ auto make_switcher(Object *object, Sequence &&methods) {
 }
 
 template <class Object, class Method>
-auto switcher(Object *object, std::initializer_list<Method> methods) {
-   return switcher(object, make_vector(methods));
+auto make_switcher(Object *object, std::initializer_list<Method> methods) {
+   return make_switcher(object, make_vector(methods));
 }
 
 void testSwitcher() {
    Cls obj;
-   auto methods = make_vector({ &Cls::method1, &Cls::method2, &Cls::method3 });
+   auto const methods = make_vector({ &Cls::method1, &Cls::method2, &Cls::method3 });
    auto s = make_switcher(&obj, methods);
    Q_ASSERT(s(0) == "10");
    Q_ASSERT(s(1) == "20");
@@ -107,7 +97,7 @@ auto wrap(Object *object) {
 
 template <class Container, class Object>
 auto wrap(Object *object, const Container &, typename Container::value_type* = {}) {
-   return wrap<typename Container::value_type>(object);
+   return wrap<typename std::decay_t<Container>::value_type>(object);
 }
 
 template <class Method, class Object>
@@ -118,13 +108,7 @@ auto wrap(Object *object, Method,
 
 void testWrap() {
    Cls obj;
-   auto methods = make_vector({ &Cls::method1, &Cls::method2, &Cls::method3 });
+   auto const methods = make_vector({ &Cls::method1, &Cls::method2, &Cls::method3 });
    QFuture<QString> result = QtConcurrent::mapped(methods, wrap(&obj, methods));
    Q_ASSERT((result.results() == QStringList{"10", "20", "30"}));
-}
-
-int main1() {
-   testSwitcher();
-   testWrap();
-   return 0;
 }

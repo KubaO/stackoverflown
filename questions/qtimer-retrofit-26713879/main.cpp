@@ -7,12 +7,13 @@ struct Class : QObject {
 };
 
 #if QT_VERSION >= QT_VERSION_CHECK(5,4,0)
-namespace detail { using QT_PREPEND_NAMESPACE(QTimer); }
+namespace compat { using QT_PREPEND_NAMESPACE(QTimer); }
 #else
 QT_BEGIN_NAMESPACE
 Q_CORE_EXPORT void qDeleteInEventHandler(QObject *o);
 QT_END_NAMESPACE
-namespace detail {
+namespace compat {
+using QT_PREPEND_NAMESPACE(qDeleteInEventHandler);
 template <class Fun> struct SingleShotHelper : QObject, Fun {
    QBasicTimer timer;
    template <class F> SingleShotHelper(int msec, QObject *context, F &&fun) :
@@ -26,11 +27,14 @@ template <class Fun> struct SingleShotHelper : QObject, Fun {
       if (ev->timerId() != timer.timerId()) return;
       timer.stop();
       (*this)();
-      QT_PREPEND_NAMESPACE(qDeleteInEventHandler)(this);
+      qDeleteInEventHandler(this);
    }
 };
-class QTimer {
+using Q_QTimer = QT_PREPEND_NAMESPACE(QTimer);
+class QTimer : public Q_QTimer {
+   Q_OBJECT
 public:
+   QTimer(QObject *parent = {}) : Q_QTimer(parent) {} // C++17: using Q_QTimer::Q_QTimer;
    template <class Fun>
    inline static void singleShot(int msec, QObject *context, Fun &&fun) {
       new SingleShotHelper<Fun>(msec, context, std::forward<Fun>(fun));
@@ -39,7 +43,7 @@ public:
 #endif
 
 void Class::TestFunc() {
-   detail::QTimer::singleShot(1000, this, [this]{
+   compat::QTimer::singleShot(1000, this, [this]{
       emit Log("Timeout...");
       TestFunc();
    });

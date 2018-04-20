@@ -1,5 +1,8 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/glitchy-paint-49930405
 #include <QtWidgets>
+#include <Qt3DRender>
+#include <Qt3DExtras>
+#include <QOpenGLFunctions_3_0>
 #include <array>
 
 class Render3dModel : public QWidget {
@@ -26,8 +29,86 @@ class Render3dModel : public QWidget {
    }
 };
 
+struct OpenGLOffscreenSurface : QOffscreenSurface {
+   QOpenGLContext context;
+   QOpenGLFunctions *functions = {};
+   QOpenGLFunctions_3_0 *functions_3_0 = {};
+   QOpenGLFramebufferObject *fbo = {};
+   OpenGLOffscreenSurface() {
+      setFormat(QSurfaceFormat::defaultFormat());
+      create();
+      context.setFormat(format());
+      if (context.create()) {
+         context.makeCurrent(this);
+         functions = context.functions();
+         functions->initializeOpenGLFunctions();
+         functions_3_0 = context.versionFunctions<QOpenGLFunctions_3_0>();
+         if (functions_3_0)
+            functions_3_0->initializeOpenGLFunctions();
+      }
+   }
+};
+
+struct Scene {
+   Qt3DCore::QAspectEngine      aspectEngine;
+   Qt3DRender::QRenderAspect   *renderAspect = new Qt3DRender::QRenderAspect;
+   Qt3DRender::QRenderSettings  renderSettings;
+   Qt3DExtras::QForwardRenderer renderer;
+   Qt3DCore::QEntity  *root = new Qt3DCore::QEntity;
+   Qt3DRender::QCamera camera{root};
+
+   Qt3DCore::QEntity       lightE{root};
+   Qt3DRender::QPointLight light{&lightE};
+   Qt3DCore::QTransform    lightTransform{&lightE};
+
+   Qt3DCore::QEntity          coneE{root};
+   Qt3DExtras::QConeMesh      cone{&coneE};
+   Qt3DCore::QTransform       coneTransform{&coneE};
+   Qt3DExtras::QPhongMaterial coneMaterial{&coneE};
+
+   Qt3DExtras::QFirstPersonCameraController camController{root};
+   Scene();
+};
+
+Scene::Scene() {
+   aspectEngine.registerAspect(renderAspect);
+   renderer.setCamera(&camera);
+   renderSettings.setActiveFrameGraph(&renderer);
+
+   renderer.setClearColor(Qt::gray);
+   camera.lens()->setPerspectiveProjection(45.0f, 16.0f/9.0f, 0.1f, 1000.0f);
+   camera.setPosition({0.f, 0.f, 20.0f});
+   camera.setUpVector({0.f, 1.f, 0.f});
+   camera.setViewCenter({});
+   renderer.setCamera(&camera);
+   camController.setCamera(&camera);
+
+   light.setColor(Qt::white);
+   light.setIntensity(1);
+   lightE.addComponent(&light);
+   lightTransform.setTranslation(camera.position());
+   lightE.addComponent(&lightTransform);
+
+   cone.setTopRadius(0.5f);
+   cone.setBottomRadius(1.0f);
+   cone.setLength(3.f);
+   cone.setRings(50);
+   cone.setSlices(20);
+   coneE.addComponent(&cone);
+
+   coneTransform.setScale(1.5f);
+   coneE.addComponent(&coneTransform);
+
+   coneMaterial.setDiffuse(Qt::darkGray);
+   coneE.addComponent(&coneMaterial);
+
+   root->addComponent(&renderSettings);
+   aspectEngine.setRootEntity(Qt3DCore::QEntityPtr{root});
+}
+
 int main(int argc, char **argv) {
    QApplication app{argc, argv};
+   Scene scene;
    QWidget win;
    QVBoxLayout topLayout{&win};
    QTabWidget tabs;

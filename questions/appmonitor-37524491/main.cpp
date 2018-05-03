@@ -1,14 +1,9 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/appmonitor-37524491
 #include <QtWidgets>
-#include <algorithm>
 #include <cstdlib>
 
-static auto const kRunLogic = QLatin1String("~~runBusinessLogic~~");
-
-int businessLogicMain(int &argc, char **argv) {
+static int businessLogicMain(int &argc, char **argv) {
   QApplication app{argc, argv};
-  Q_ASSERT(argc == 1);
-  Q_ASSERT(app.arguments().count() == 1); // the special argument was removed
   QWidget w;
   QHBoxLayout layout{&w};
   QPushButton crash{"Crash"};  // purposefully crash for testing
@@ -22,7 +17,20 @@ int businessLogicMain(int &argc, char **argv) {
   return app.exec();
 }
 
-int monitorMain(int &argc, char **argv) {
+static auto const kRunLogic = QStringLiteral("run__business__logic");
+static auto const kRunLogicValue = kRunLogic;
+
+#if defined(Q_OS_WIN32)
+#include <windows.h>
+QString getWindowsCommandLine() {
+  return QString::fromWCharArray(GetCommandLine());
+}
+int	setenv(const char *name, const char *value, int) {
+  return _putenv_s(name, value);
+}
+#endif
+
+static int monitorMain(int &argc, char **argv) {
   QCoreApplication app{argc, argv};
   QProcess proc;
   auto onFinished = [&](int retcode, QProcess::ExitStatus status) {
@@ -33,41 +41,31 @@ int monitorMain(int &argc, char **argv) {
   };
   QObject::connect(&proc, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), onFinished);
 
-  proc.setProgram(qApp->applicationFilePath()); // logic and monitor are the same executable
-  proc.setArguments({kRunLogic});
+  auto env = QProcessEnvironment::systemEnvironment();
+  env.insert(kRunLogic, kRunLogicValue);
+  proc.setProgram(app.applicationFilePath()); // logic and monitor are the same executable
+#if defined(Q_OS_WIN32)
+  proc.setNativeArguments(getWindowsCommandLine());
+#else
+  proc.setArguments(app.arguments().mid(1));
+#endif
+  proc.setProcessEnvironment(env);
   proc.setProcessChannelMode(QProcess::ForwardedChannels);
   proc.start();
   return app.exec();
 }
 
-bool checkForRunLogic(int &argc, char **argv) {
-  static struct SwitchLocator {
-    int &argc;
-    char **const argv;
-    char **end = {}, **arg = {};
-    bool check() {
-      end = argv+argc;
-      arg = std::find(argv+1, end, kRunLogic);
-      return arg != end;
-    }
-  } sw{argc, argv};
-  if (sw.check()) {
-    // The special switch is present - remove it after QCoreApplication constructor returns
-    qAddPreRoutine([]{
-      if (sw.check()) {
-        // QApplication may have already removed the switch, depending on other argument processing
-        std::move(sw.arg+1, sw.end, sw.arg);
-        sw.argc--;
-      }
-    });
-    return true;
-  }
-  return false;
+static bool checkForRunLogic() {
+  auto hasRunLogic = QProcessEnvironment::systemEnvironment().value(kRunLogic) == kRunLogicValue;
+  if (hasRunLogic)
+    setenv(kRunLogic.toLocal8Bit(), "", true);
+  return hasRunLogic;
 }
 
 int main(int argc, char **argv) {
-  if (!checkForRunLogic(argc, argv))
+  if (!checkForRunLogic())
     return monitorMain(argc, argv);
   else
     return businessLogicMain(argc, argv);
 }
+

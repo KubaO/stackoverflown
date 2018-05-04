@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 # test.py
 
+from __future__ import print_function
 from cmd import Cmd
+import time, sys
 
 class MyPrompt(Cmd):
     def do_help(self, args):
         if len(args) == 0:
-            name = "   |'exec <testname>' or 'exec !<testnum>'\n   |0 BQ1\n   |1 BS1\n   |2 BA1\n   |3 BP1'"
+            name = "   |'exec <testname>' or 'exec !<testnum>'\n   |0 BQ1\n   |1 BS1\n   |2 BA1\n   |3 BP1"
         else:
             name = args
         print ("%s" % name)
@@ -23,9 +25,10 @@ class MyPrompt(Cmd):
             print ("   |||TEST BP3_ACTIVE")
         else:
             print ("invalid input")
+        time.sleep(1)
 
     def do_quit(self, args):
-        print ("Quitting.")
+        print ("Quitting.", file=sys.stderr)
         return True
 
 if __name__ == '__main__':

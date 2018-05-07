@@ -5,58 +5,141 @@
 #include <QtWidgets>
 #endif
 #include <windows.h>
+#include <comdef.h>
+//#define _WIN32_WINNT _WIN32_WINNT_WIN7
+
+static QString toString(HRESULT hr) {
+   _com_error err{hr};
+   return QStringLiteral("Error 0x%1: %2").arg((quint32)hr, 8, 16, QLatin1Char('0'))
+         .arg(err.ErrorMessage());
+}
 
 static QString getLastErrorMsg() {
-    LPWSTR bufPtr = NULL;
-    auto err = GetLastError();
-    FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-                   FORMAT_MESSAGE_FROM_SYSTEM |
-                   FORMAT_MESSAGE_IGNORE_INSERTS,
-                   NULL, err, 0, (LPWSTR)&bufPtr, 0, NULL);
-    const auto result =
-        (bufPtr) ? QString::fromUtf16((const ushort*)bufPtr).trimmed() :
-                   QString("Unknown Error %1").arg(err);
-    LocalFree(bufPtr);
-    return result;
+   return toString(HRESULT_FROM_WIN32(GetLastError()));
+}
+
+static QString progressMessage(ULONGLONG part, ULONGLONG whole) {
+   return QStringLiteral("Transferred %1 of %2 bytes.")
+         .arg(part).arg(whole);
 }
 
 class Copier : public QObject {
    Q_OBJECT
+
    BOOL m_stop;
+   QMutex m_pauseMutex;
+   QAtomicInt m_pause;
+   QWaitCondition m_pauseWait;
+
    QString m_src, m_dst;
+   ULONGLONG m_lastPart, m_lastWhole;
+   void newStatus(ULONGLONG part, ULONGLONG whole) {
+      if (part != m_lastPart || whole != m_lastWhole) {
+         m_lastPart = part;
+         m_lastWhole = whole;
+         emit newStatus(progressMessage(part, whole));
+      }
+   }
+#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
+   static COPYFILE2_MESSAGE_ACTION CALLBACK copyProgress2(
+         const COPYFILE2_MESSAGE *message, PVOID context);
+#else
    static DWORD CALLBACK copyProgress(
          LARGE_INTEGER totalSize, LARGE_INTEGER totalTransferred,
          LARGE_INTEGER streamSize, LARGE_INTEGER streamTransferred,
          DWORD streamNo, DWORD callbackReason, HANDLE src, HANDLE dst,
-         LPVOID data)
-   {
-      Q_UNUSED(streamSize) Q_UNUSED(streamTransferred)
-      Q_UNUSED(streamNo) Q_UNUSED(callbackReason)
-      Q_UNUSED(src) Q_UNUSED(dst)
-      auto self = static_cast<Copier*>(data);
-      const auto text = QString("Transferred %1 of %2 bytes").
-            arg(totalTransferred.QuadPart).arg(totalSize.QuadPart);
-      emit self->newStatus(text);
-      return PROGRESS_CONTINUE;
-   }
+         LPVOID data);
+#endif
 public:
    Copier(const QString & src, const QString & dst, QObject * parent = nullptr) :
       QObject{parent}, m_src{src}, m_dst{dst} {}
    Q_SIGNAL void newStatus(const QString &);
    Q_SIGNAL void finished();
-   Q_SLOT void stop() { m_stop = TRUE; }
-   void copy() {
-      QtConcurrent::run([this]{
-         m_stop = FALSE;
-         auto rc = CopyFileExW((LPCWSTR)m_src.utf16(), (LPCWSTR)m_dst.utf16(),
-                               &copyProgress, this, &m_stop, 0);
-         if (!rc)
-            emit newStatus(getLastErrorMsg());
-         emit finished();
-      });
+   /// This method is thread-safe
+   Q_SLOT void copy();
+   /// This method is thread-safe
+   Q_SLOT void stop() {
+      resume();
+      m_stop = TRUE;
    }
-   ~Copier() { stop(); }
+   /// This method is thread-safe
+   Q_SLOT void pause() {
+      m_pause = true;
+   }
+   /// This method is thread-safe
+   Q_SLOT void resume() {
+      if (m_pause)
+         m_pauseWait.notify_one();
+      m_pause = false;
+   }
+   ~Copier() override { stop(); }
 };
+
+#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
+void Copier::copy() {
+   m_lastPart = m_lastWhole = {};
+   m_stop = FALSE;
+   m_pause = false;
+   QtConcurrent::run([this]{
+      COPYFILE2_EXTENDED_PARAMETERS params{
+         sizeof(COPYFILE2_EXTENDED_PARAMETERS), 0, &m_stop,
+               Copier::copyProgress2, this
+      };
+      auto rc = CopyFile2((PCWSTR)m_src.utf16(), (PCWSTR)m_dst.utf16(), &params);
+      if (!SUCCEEDED(rc))
+         emit newStatus(toString(rc));
+      emit finished();
+   });
+}
+COPYFILE2_MESSAGE_ACTION CALLBACK Copier::copyProgress2(
+      const COPYFILE2_MESSAGE *message, PVOID context)
+{
+   COPYFILE2_MESSAGE_ACTION action = COPYFILE2_PROGRESS_CONTINUE;
+   auto self = static_cast<Copier*>(context);
+   if (message->Type == COPYFILE2_CALLBACK_CHUNK_FINISHED) {
+      auto &info = message->Info.ChunkFinished;
+      self->newStatus(info.uliTotalBytesTransferred.QuadPart, info.uliTotalFileSize.QuadPart);
+   }
+   else if (message->Type == COPYFILE2_CALLBACK_ERROR) {
+      auto &info = message->Info.Error;
+      self->newStatus(info.uliTotalBytesTransferred.QuadPart, info.uliTotalFileSize.QuadPart);
+      emit self->newStatus(toString(info.hrFailure));
+      action = COPYFILE2_PROGRESS_CANCEL;
+   }
+   if (self->m_pause) {
+      QMutexLocker lock{&self->m_pauseMutex};
+      self->m_pauseWait.wait(&self->m_pauseMutex);
+   }
+   return action;
+}
+#else
+void Copier::copy() {
+   m_lastPart = m_lastWhole = {};
+   m_stop = FALSE;
+   m_pause = false;
+   QtConcurrent::run([this]{
+      auto rc = CopyFileExW((LPCWSTR)m_src.utf16(), (LPCWSTR)m_dst.utf16(),
+                            &copyProgress, this, &m_stop, 0);
+      if (!rc)
+         emit newStatus(getLastErrorMsg());
+      emit finished();
+   });
+}
+DWORD CALLBACK Copier::copyProgress(
+      const LARGE_INTEGER totalSize, const LARGE_INTEGER totalTransferred,
+      LARGE_INTEGER, LARGE_INTEGER, DWORD,
+      DWORD, HANDLE, HANDLE,
+      LPVOID data)
+{
+   auto self = static_cast<Copier*>(data);
+   self->newStatus(totalTransferred.QuadPart, totalSize.QuadPart);
+   if (self->m_pause) {
+      QMutexLocker lock{&self->m_pauseMutex};
+      self->m_pauseWait.wait(&self->m_pauseMutex);
+   }
+   return PROGRESS_CONTINUE;
+}
+#endif
 
 struct PathWidget : public QWidget {
    QHBoxLayout layout{this};
@@ -75,7 +158,7 @@ struct PathWidget : public QWidget {
 class Ui : public QWidget {
    Q_OBJECT
    QFormLayout m_layout{this};
-   QLabel m_status;
+   QPlainTextEdit m_status;
    PathWidget m_src{"Source File"}, m_dst{"Destination File"};
    QPushButton m_copy{"Copy"};
    QPushButton m_cancel{"Cancel"};
@@ -87,7 +170,7 @@ class Ui : public QWidget {
    Q_SIGNAL void stopCopy();
    Q_SLOT void startCopy() {
       auto copier = new Copier(m_src.edit.text(), m_dst.edit.text(), this);
-      connect(copier, SIGNAL(newStatus(QString)), &m_status, SLOT(setText(QString)));
+      connect(copier, SIGNAL(newStatus(QString)), &m_status, SLOT(appendPlainText(QString)));
       connect(copier, SIGNAL(finished()), SIGNAL(copyFinished()));
       connect(copier, SIGNAL(finished()), copier, SLOT(deleteLater()));
       connect(this, SIGNAL(stopCopy()), copier, SLOT(stop()));
@@ -104,6 +187,8 @@ public:
 
       m_src.dialog.setFileMode(QFileDialog::ExistingFile);
       m_dst.dialog.setAcceptMode(QFileDialog::AcceptSave);
+      m_status.setReadOnly(true);
+      m_status.setMaximumBlockCount(5);
 
       m_machine.setInitialState(&s_stopped);
       s_stopped.addTransition(&m_copy, SIGNAL(clicked()), &s_copying);

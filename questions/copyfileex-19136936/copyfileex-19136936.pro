@@ -10,6 +10,5 @@ greaterThan(QT_MAJOR_VERSION, 4) {
     }
 }
 QT += concurrent
-TARGET = copyfileex-19136936
 TEMPLATE = app
-SOURCES += main.cpp
+SOURCES = main.cpp

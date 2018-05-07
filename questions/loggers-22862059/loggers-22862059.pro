@@ -1,8 +1,6 @@
-QT       += core gui widgets
-
-TARGET = loggers-22862059
-
+QT = widgets
 TEMPLATE = app
-
-
-SOURCES += main.cpp
+SOURCES = main.cpp
+DEFINES += \
+    QT_DEPRECATED_WARNINGS QT_DISABLE_DEPRECATED_BEFORE=0x060000 \
+    QT_RESTRICTED_CAST_FROM_ASCII

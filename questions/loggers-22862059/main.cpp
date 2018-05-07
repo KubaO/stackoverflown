@@ -1,55 +1,47 @@
-#include <QApplication>
-#include <QTextEdit>
-#include <QPointer>
-#include <QFile>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/loggers-22862059
+#include <QtWidgets>
 #include <cstdio>
 
 /// An interface to be implemented by loggers.
 class Logger : public QObject
 {
    Q_OBJECT
-
 public:
-   Logger(QObject * parent = 0);
-
-public slots:
-   virtual void Log(const QString& txt) = 0;
+   Logger(QObject *parent = {});
+   Q_SLOT virtual void Log(const QString &txt) = 0;
 };
 
 Logger::Logger(QObject *parent) : QObject(parent) {}
 
-/// Logs to a QTextEdit
+/// Logs to a QPlainTextEdit
 class TextBoxGUILogger : public Logger
 {
    Q_OBJECT
-
 public:
-   TextBoxGUILogger(QObject * parent = 0);
-   void setWidget(QTextEdit*);
-   void Log(const QString& txt);
-
+   TextBoxGUILogger(QObject *parent = {});
+   void setWidget(QPlainTextEdit *);
+   void Log(const QString &txt) override;
 private:
-   QPointer<QTextEdit> m_txtEditBox;
+   QPointer<QPlainTextEdit> m_txtEditBox;
 };
 
-TextBoxGUILogger::TextBoxGUILogger(QObject * parent) : Logger(parent) {}
+TextBoxGUILogger::TextBoxGUILogger(QObject *parent) : Logger(parent) {}
 
-void TextBoxGUILogger::setWidget(QTextEdit * edit) {
+void TextBoxGUILogger::setWidget(QPlainTextEdit *edit) {
    m_txtEditBox = edit;
 }
 
 void TextBoxGUILogger::Log(const QString &txt) {
-   if (m_txtEditBox) m_txtEditBox->append(txt);
+   if (m_txtEditBox) m_txtEditBox->appendPlainText(txt);
 }
 
 /// Logs to the standard output.
 class CLILogger : public Logger
 {
    Q_OBJECT
-
 public:
-   CLILogger(QObject * parent = 0);
-   void Log(const QString& txt);
+   CLILogger(QObject *parent = {});
+   void Log(const QString &txt) override;
 };
 
 CLILogger::CLILogger(QObject *parent) : Logger(parent) {}
@@ -62,23 +54,19 @@ void CLILogger::Log(const QString &txt) {
 class FileLogger : public Logger
 {
    Q_OBJECT
-
 public:
-   FileLogger(QObject * parent = 0);
+   FileLogger(QObject *parent = {});
    /// The file can be owned by another object, or it can be made a child
    /// of the logger. In either case the behavior will be correct.
-   void setFile(QFile*);
-
-public slots:
-   void Log(const QString& txt);
-
+   void setFile(QFile *);
+   void Log(const QString &txt) override;
 private:
    QPointer<QFile> m_file;
 };
 
-FileLogger::FileLogger(QObject * parent) : Logger(parent) {}
+FileLogger::FileLogger(QObject *parent) : Logger(parent) {}
 
-void FileLogger::setFile(QFile * file) {
+void FileLogger::setFile(QFile *file) {
    m_file = file;
 }
 
@@ -87,11 +75,6 @@ void FileLogger::Log(const QString &txt) {
 }
 
 
-int main(int argc, char *argv[])
-{
-   QApplication a(argc, argv);
-
-   return a.exec();
-}
+int main() {}
 
 #include "main.moc"

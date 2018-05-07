@@ -1,46 +1,44 @@
-#include <QApplication>
-#include <QListView>
-#include <QStringListModel>
-#include <QThread>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/filemodel-18548048
+#include <QtWidgets>
+#include <QtConcurrent>
 
-class Loader : public QObject {
-    Q_OBJECT
-public:
-    Loader(QObject *parent = 0) : QObject(parent) {}
-    Q_SLOT void load() {
-        // this could be reading from a file
-        QStringList lines;
-        for (int i = 0; i < 100000; ++i) {
-            lines << QString("Item %1").arg(i);
-        }
-        emit hasData(lines);
-    }
-    Q_SIGNAL void hasData(const QStringList &);
-};
-
-class StringListModel : public QStringListModel {
-    Q_OBJECT
-public:
-    StringListModel() {}
-    Q_SLOT void setList(const QStringList & list) { setStringList(list); }
-};
-
-int main(int argc, char *argv[])
-{
-    QThread thread;
-    StringListModel model;
-    QApplication a(argc, argv);
-    QListView view;
-    Loader loader;
-    view.setModel(&model);
-    view.setUniformItemSizes(true);
-    loader.moveToThread(&thread);
-    loader.connect(&thread, SIGNAL(started()), SLOT(load()));
-    model.connect(&loader, SIGNAL(hasData(QStringList)), SLOT(setList(QStringList)));
-    thread.connect(qApp, SIGNAL(aboutToQuit()), SLOT(quit()));
-    thread.start();
-    view.show();
-    return a.exec();
+void makeLines(QBuffer &buf, int count = 1000000) {
+   buf.open(QIODevice::WriteOnly | QIODevice::Text);
+   char line[16];
+   for (int i = 0; i < count; ++i) {
+      int n = qsnprintf(line, sizeof(line), "Item %d\n", i);
+      buf.write(line, n);
+   }
+   buf.close();
 }
 
+struct StringListSource : QObject {
+   Q_SIGNAL void signal(const QStringList &);
+   void operator()(const QStringList &data) { emit signal(data); }
+   Q_OBJECT
+};
+
+int main(int argc, char *argv[]) {
+   QApplication app(argc, argv);
+   QListView view;
+   QStringListModel model;
+   StringListSource signal;
+   QObject::connect(&signal, &StringListSource::signal, &model, &QStringListModel::setStringList);
+   QtConcurrent::run([&signal]{
+      QBuffer file;
+      signal({"Generating Data..."});
+      makeLines(file);
+      signal({"Loading Data..."});
+      QStringList lines;
+      if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+         while (!file.atEnd())
+            lines.append(QString::fromLatin1(file.readLine()));
+      file.close();
+      signal(lines);
+   });
+   view.setModel(&model);
+   view.setUniformItemSizes(true);
+   view.show();
+   return app.exec();
+}
 #include "main.moc"

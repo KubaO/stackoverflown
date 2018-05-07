@@ -10,47 +10,60 @@
 
 namespace detail {
 template <typename F>
-struct FEvent : public QEvent {
+struct FEvent : QEvent {
    using Fun = typename std::decay<F>::type;
+   const QObject *const obj;
+   const QMetaObject *const type = obj->metaObject();
    Fun fun;
-   FEvent(Fun && fun) : QEvent(QEvent::None), fun(std::move(fun)) {}
-   FEvent(const Fun & fun) : QEvent(QEvent::None), fun(fun) {}
-   ~FEvent() { fun(); }
+   template <typename Fun>
+   FEvent(const QObject *obj, Fun &&fun) : QEvent(QEvent::None), obj(obj), fun(std::forward<Fun>(fun)) {}
+   ~FEvent() {
+      if (obj->metaObject()->inherits(type)) // ensure that the object is not being destructed
+         fun();
+   }
 }; }
 
 template <typename F>
-static void postToObject(F && fun, QObject * obj = qApp) {
+static void postToObject(F &&fun, QObject *obj = qApp) {
    if (qobject_cast<QThread*>(obj))
       qWarning() << "posting a call to a thread object - consider using postToThread";
-   QCoreApplication::postEvent(obj, new detail::FEvent<F>(std::forward<F>(fun)));
+   QCoreApplication::postEvent(obj, new detail::FEvent<F>(obj, std::forward<F>(fun)));
 }
 
 template <typename F>
-static void postToThread(F && fun, QThread * thread = qApp->thread()) {
+static void postToThread(F &&fun, QThread *thread = qApp->thread()) {
    QObject * obj = QAbstractEventDispatcher::instance(thread);
    Q_ASSERT(obj);
-   QCoreApplication::postEvent(obj, new detail::FEvent<F>(std::forward<F>(fun)));
+   QCoreApplication::postEvent(obj, new detail::FEvent<F>(obj, std::forward<F>(fun)));
 }
 
 #if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
 // Qt 5 - alternative version
 
 template <typename F>
-static void postToObject2(F && fun, QObject * obj = qApp) {
+static void postToObject2(F &&fun, QObject *obj = qApp) {
    if (qobject_cast<QThread*>(obj))
       qWarning() << "posting a call to a thread object - consider using postToThread";
    QObject src;
-   QObject::connect(&src, &QObject::destroyed, obj, std::forward<F>(fun),
-                    Qt::QueuedConnection);
+   QObject::connect(&src, &QObject::destroyed, obj,
+                    [f = fun, type = obj->metaObject(), obj]
+   {
+      if (obj->metaObject()->inherits(type))
+         f();
+   }, Qt::QueuedConnection);
 }
 
 template <typename F>
-static void postToThread2(F && fun, QThread * thread = qApp->thread()) {
+static void postToThread2(F &&fun, QThread *thread = qApp->thread()) {
    QObject * obj = QAbstractEventDispatcher::instance(thread);
    Q_ASSERT(obj);
    QObject src;
-   QObject::connect(&src, &QObject::destroyed, obj, std::forward<F>(fun),
-                    Qt::QueuedConnection);
+   QObject::connect(&src, &QObject::destroyed, obj,
+                    [f = std::forward<F>(fun), type = obj->metaObject(), obj]
+   {
+      if (obj->metaObject()->inherits(type))
+         f();
+   }, Qt::QueuedConnection);
 }
 
 void test0() {
@@ -61,7 +74,7 @@ void test0() {
    // Execute in given object's thread
    postToObject2([&]{ o.setObjectName("hello"); }, &o);
    // or
-   postToObject2(std::bind(&QObject::setObjectName, &o, "hello"), &o);
+   //postToObject2(std::bind(&QObject::setObjectName, &o, "hello"), &o);
 
    // Execute in given thread
    postToThread2([]{ qDebug() << "hello from worker thread"; });
@@ -79,7 +92,7 @@ void test1() {
    // Execute in given object's thread
    postToObject([&]{ o.setObjectName("hello"); }, &o);
    // or
-   postToObject(std::bind(&QObject::setObjectName, &o, "hello"), &o);
+   //postToObject(std::bind(&QObject::setObjectName, &o, "hello"), &o);
 
    // Execute in given thread
    postToThread([]{ qDebug() << "hello from worker thread"; });
@@ -229,10 +242,10 @@ public:
    static FunctorCallConsumer * instance() {
       QMutexLocker lock(&m_threadObjectMutex);
       if (! m_appThreadObject) {
-            m_appThreadObject = new FunctorCallConsumer;
-            m_appThreadObject->moveToThread(qApp->thread());
-            qAddPostRoutine(&deleteAppThreadObject);
-         }
+         m_appThreadObject = new FunctorCallConsumer;
+         m_appThreadObject->moveToThread(qApp->thread());
+         qAddPostRoutine(&deleteAppThreadObject);
+      }
       return m_appThreadObject;
    }
 };
@@ -352,18 +365,18 @@ void postMetaCall(QThread * thread, std::function<void()> && fun) {
 #include <functional>
 
 void postToMainThread(const std::function<void()> & fun) {
-  QObject signalSource;
-  QObject::connect(&signalSource, &QObject::destroyed, qApp, [=](QObject*){
-    fun();
-  });
+   QObject signalSource;
+   QObject::connect(&signalSource, &QObject::destroyed, qApp, [=](QObject*){
+      fun();
+   });
 }
 
 #ifdef __cpp_init_captures
 void postToMainThread(std::function<void()> && fun) {
-  QObject signalSource;
-  QObject::connect(&signalSource, &QObject::destroyed, qApp, [fun(std::move(fun))](QObject*){
-    fun();
-  });
+   QObject signalSource;
+   QObject::connect(&signalSource, &QObject::destroyed, qApp, [fun(std::move(fun))](QObject*){
+      fun();
+   });
 }
 #endif
 

@@ -1,0 +1,5 @@
+QT = widgets
+DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x050800
+TARGET = filedialog-mod-49371087
+TEMPLATE = app
+SOURCES += main.cpp

@@ -2,6 +2,8 @@
 #include <QtWidgets>
 #include <algorithm>
 #include <cmath>
+//20-21
+//10-11
 
 const QString & CP437() {
     static auto const set = QStringLiteral(
@@ -30,6 +32,7 @@ class HexView : public QAbstractScrollArea {
     qreal xStep() const { return m_glyphRect.width(); }
     qreal yStep() const { return m_glyphRect.height(); }
     static QChar decode(char ch) { return CP437()[(uchar)ch]; }
+    QImage m_composite;
     void drawChar(const QPointF & pos, QChar ch, QColor fg, QColor bg, QPainter & p) {
         auto & glyph = m_glyphs[ch];
         if (glyph.isNull()) {
@@ -40,17 +43,18 @@ class HexView : public QAbstractScrollArea {
             p.setFont(m_font);
             p.drawText(m_glyphPos, {ch});
         }
-        QImage composite = glyph;
+        if (m_composite.size() != glyph.size())
+            m_composite = glyph.copy();
+        else
+            memcpy(m_composite.bits(), glyph.constBits(), glyph.sizeInBytes());
         {
-            QPainter p{&composite};
+            QPainter p{&m_composite};
             p.setCompositionMode(QPainter::CompositionMode_SourceOut);
-            p.fillRect(composite.rect(), bg);
+            p.fillRect(m_composite.rect(), bg);
             p.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-            p.fillRect(composite.rect(), fg);
+            p.fillRect(m_composite.rect(), fg);
         }
-        auto rect = m_glyphRect;
-        rect.moveTo(pos);
-        p.drawImage(pos, composite);
+        p.drawImage(pos, m_composite);
     }
     void initData() {
         qreal width = viewport()->width() - m_addressChars*xStep() - m_dataMargin;
@@ -64,6 +68,8 @@ class HexView : public QAbstractScrollArea {
         }
     }
     void paintEvent(QPaintEvent *) override {
+        QElapsedTimer time;
+        time.start();
         QPainter p{viewport()};
         QPointF pos;
         QPointF step{xStep(), 0.};
@@ -85,6 +91,7 @@ class HexView : public QAbstractScrollArea {
             }
             pos = QPointF{0., pos.y() + yStep()};
         }
+        qDebug() << time.elapsed();
     }
     void resizeEvent(QResizeEvent *) override {
         initData();
@@ -141,6 +148,7 @@ int main(int argc, char ** argv) {
         view.setData(data.constData(), (size_t)data.size());
     });
     charset.click();
+    ui.resize(1000, 800);
     ui.show();
     return app.exec();
 }

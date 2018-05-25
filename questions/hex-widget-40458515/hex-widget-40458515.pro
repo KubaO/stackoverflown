@@ -1,4 +1,4 @@
-QT = widgets
+QT = widgets concurrent
 CONFIG += c++14
 DEFINES += \
   QT_DEPRECATED_WARNINGS \

@@ -1,8 +1,37 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/hex-widget-40458515
+#include <QtConcurrent>
 #include <QtWidgets>
 #include <algorithm>
 #include <array>
 #include <cmath>
+
+struct BackingStoreView {
+    QImage *dst = {};
+    uchar *data = {};
+    const QWidget *widget = {};
+    explicit BackingStoreView(const QWidget *widget) {
+        if (!widget || !widget->window()) return;
+        dst = dynamic_cast<QImage*>(widget->window()->backingStore()->paintDevice());
+        if (!dst || dst->depth() % 8) return;
+        auto byteDepth = dst->depth()/8;
+        auto pos = widget->mapTo(widget->window(), {});
+        data = const_cast<uchar*>(dst->constScanLine(pos.y()) + byteDepth * pos.x());
+        this->widget = widget;
+    }
+    // A view onto the backing store of a given widget
+    QImage getView() const {
+        if (!data) return {};
+        QImage ret(data, widget->width(), widget->height(), dst->bytesPerLine(), dst->format());
+        ret.setDevicePixelRatio(widget->devicePixelRatio());
+        return ret;
+    }
+    // Is a given image exactly this view?
+    bool isAView(const QImage &img) const {
+        return data && img.bits() == data && img.depth() == dst->depth()
+                && img.width() == widget->width() && img.height() == widget->height()
+                && img.bytesPerLine() == dst->bytesPerLine() && img.format() == dst->format();
+    }
+};
 
 static auto const CP437 = QStringLiteral(
             " ☺☻♥♦♣♠•◘○◙♂♀♪♫☼▶◀↕‼¶§▬↨↑↓→←∟↔▲▼"
@@ -16,6 +45,7 @@ static auto const CP437 = QStringLiteral(
 
 class HexView : public QAbstractScrollArea {
     Q_OBJECT
+    QImage const m_nullImage;
     const int m_addressChars = 8;
     const int m_dataMargin = 4;
     const char * m_data = {};
@@ -27,9 +57,27 @@ class HexView : public QAbstractScrollArea {
     QMap<QChar, QImage> m_glyphs;
     QFont m_font{"Monaco"};
     QFontMetricsF m_fm{m_font};
+    struct DrawUnit { QPoint pos; const QImage *glyph; QColor fg, bg; };
+    QFutureSynchronizer<void> m_sync;
+    QVector<DrawUnit> m_chunks;
+    QVector<QImage> m_stores;
+    using chunk_it = QVector<DrawUnit>::const_iterator;
+    using store_it = QVector<QImage>::const_iterator;
+
     static inline QChar decode(char ch) { return CP437[uchar(ch)]; }
     inline int xStep() const { return m_glyphSize.width(); }
     inline int yStep() const { return m_glyphSize.height(); }
+    void initData() {
+        int const width = viewport()->width() - m_addressChars*xStep() - m_dataMargin;
+        m_charsPerLine = (width > 0) ? width/xStep() : 0;
+        m_lines = viewport()->height()/yStep();
+        if (m_charsPerLine && m_lines) {
+            verticalScrollBar()->setRange(0, m_dataSize/m_charsPerLine);
+            verticalScrollBar()->setValue(m_dataStart/m_charsPerLine);
+        } else {
+            verticalScrollBar()->setRange(0, 0);
+        }
+    }
     const QImage &glyph(QChar ch) {
         auto &glyph = m_glyphs[ch];
         if (glyph.isNull()) {
@@ -46,26 +94,43 @@ class HexView : public QAbstractScrollArea {
         }
         return glyph;
     }
-    void drawChar(const QPoint &pos, QChar ch, QColor fg, QColor bg, QPainter &p) {
-        QRect rect(pos, m_glyphSize);
+    static void drawChar(const DrawUnit & u, QPainter &p) {
+        const QRect rect(u.pos, u.glyph->size());
         p.setCompositionMode(QPainter::CompositionMode_Source);
-        p.drawImage(pos, glyph(ch));
+        p.drawImage(u.pos, *u.glyph);
         p.setCompositionMode(QPainter::CompositionMode_SourceOut);
-        p.fillRect(rect, bg);
+        p.fillRect(rect, u.bg);
         p.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-        p.fillRect(rect, fg);
-        p.setCompositionMode({});
+        p.fillRect(rect, u.fg);
     }
-    void initData() {
-        qreal width = viewport()->width() - m_addressChars*xStep() - m_dataMargin;
-        m_charsPerLine = (width > 0.) ? width/xStep() : 0.;
-        m_lines = viewport()->height()/yStep();
-        if (m_charsPerLine && m_lines) {
-            verticalScrollBar()->setRange(0, m_dataSize/m_charsPerLine);
-            verticalScrollBar()->setValue(m_dataStart/m_charsPerLine);
-        } else {
-            verticalScrollBar()->setRange(0, 0);
+    static QFuture<void> submitChunks(chunk_it begin, chunk_it end, store_it store) {
+        return QtConcurrent::run([begin, end, store]{
+            QPainter p(const_cast<QImage*>(&*store));
+            for (auto it = begin; it != end; it++)
+                drawChar(*it, p);
+        });
+    }
+    int processChunks() {
+        m_stores.resize(QThread::idealThreadCount());
+        BackingStoreView view(viewport());
+        if (!view.isAView(m_stores.last()))
+            std::generate(m_stores.begin(), m_stores.end(), [&view]{ return view.getView(); });
+        std::ptrdiff_t jobSize = std::max(128, (m_chunks.size() / m_stores.size())+1);
+        auto const cend = m_chunks.cend();
+        int refY = 0;
+        auto store = m_stores.cbegin();
+        for (auto it = m_chunks.cbegin(); it != cend;) {
+            auto end = it + std::min(cend-it, jobSize);
+            while (end != cend && (end->pos.y() == refY || (refY = end->pos.y(), false)))
+                end++; // break chunks across line boundaries
+            m_sync.addFuture(submitChunks(it, end, store));
+            it = end;
+            store++;
         }
+        m_sync.waitForFinished();
+        m_sync.clearFutures();
+        m_chunks.clear();
+        return store - m_stores.cbegin();
     }
 protected:
     void paintEvent(QPaintEvent *ev) override {
@@ -78,25 +143,27 @@ protected:
         p.drawLine(dividerX, 0, dividerX, viewport()->height());
         int offset = 0;
         QRect rRect = ev->rect();
+        p.end();
         while (offset < m_charsPerLine*m_lines && m_dataStart + offset < m_dataSize) {
             const auto address = QString::number(m_dataStart + offset, 16);
             pos += step * (m_addressChars - address.size());
             for (auto c : address) {
                 if (QRect(pos, m_glyphSize).intersects(rRect))
-                    drawChar(pos, c, Qt::black, Qt::white, p);
+                    m_chunks.push_back({pos, &glyph(c), Qt::black, Qt::white});
                 pos += step;
             }
             pos += {m_dataMargin, 0};
             auto bytes = std::min(m_dataSize - offset, (size_t)m_charsPerLine);
             for (int n = bytes; n; n--) {
                 if (QRect(pos, m_glyphSize).intersects(rRect))
-                    drawChar(pos, decode(m_data[m_dataStart + offset]), Qt::red, Qt::white, p);
+                    m_chunks.push_back({pos, &glyph(decode(m_data[m_dataStart + offset])), Qt::red, Qt::white});
                 pos += step;
                 offset ++;
             }
             pos = {0, pos.y() + yStep()};
         }
-        newStatus(QStringLiteral("%1ms").arg(time.nsecsElapsed()/1e6));
+        int jobs = processChunks();
+        newStatus(QStringLiteral("%1ms n=%2").arg(time.nsecsElapsed()/1e6).arg(jobs));
     }
     void resizeEvent(QResizeEvent *) override {
         initData();

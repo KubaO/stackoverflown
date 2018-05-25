@@ -17,33 +17,37 @@ static auto const CP437 = QStringLiteral(
 class HexView : public QAbstractScrollArea {
     Q_OBJECT
     const int m_addressChars = 8;
-    const qreal m_dataMargin = 4.;
+    const int m_dataMargin = 4;
     const char * m_data = {};
     size_t m_dataSize = 0;
     size_t m_dataStart = 0;
-    QRectF m_glyphRect{0.,0.,1.,1.};
+    QSize m_glyphSize;
     QPointF m_glyphPos;
-    int m_chars, m_lines;
+    int m_charsPerLine, m_lines;
     QMap<QChar, QImage> m_glyphs;
     QFont m_font{"Monaco"};
+    QFontMetricsF m_fm{m_font};
     static inline QChar decode(char ch) { return CP437[uchar(ch)]; }
-    inline qreal xStep() const { return m_glyphRect.width(); }
-    inline qreal yStep() const { return m_glyphRect.height(); }
+    inline int xStep() const { return m_glyphSize.width(); }
+    inline int yStep() const { return m_glyphSize.height(); }
     const QImage &glyph(QChar ch) {
         auto &glyph = m_glyphs[ch];
         if (glyph.isNull()) {
-            glyph = QImage{m_glyphRect.size().toSize(), QImage::Format_ARGB32_Premultiplied};
+            QPointF extent = m_fm.boundingRect(ch).translated(m_glyphPos).bottomRight();
+            glyph = QImage(m_glyphSize, QImage::Format_ARGB32_Premultiplied);
             glyph.fill(Qt::transparent);
             QPainter p{&glyph};
             p.setPen(Qt::white);
             p.setFont(m_font);
-            p.drawText(m_glyphPos, {ch});
+            p.translate(m_glyphPos);
+            p.scale(std::min(1.0, (m_glyphSize.width()-1)/extent.x()),
+                    std::min(1.0, (m_glyphSize.height()-1)/extent.y()));
+            p.drawText(QPointF{}, {ch});
         }
         return glyph;
     }
-    void drawChar(const QPointF &pos, QChar ch, QColor fg, QColor bg, QPainter &p) {
-        auto rect = m_glyphRect;
-        rect.moveTo(pos);
+    void drawChar(const QPoint &pos, QChar ch, QColor fg, QColor bg, QPainter &p) {
+        QRect rect(pos, m_glyphSize);
         p.setCompositionMode(QPainter::CompositionMode_Source);
         p.drawImage(pos, glyph(ch));
         p.setCompositionMode(QPainter::CompositionMode_SourceOut);
@@ -54,56 +58,63 @@ class HexView : public QAbstractScrollArea {
     }
     void initData() {
         qreal width = viewport()->width() - m_addressChars*xStep() - m_dataMargin;
-        m_chars = (width > 0.) ? width/xStep() : 0.;
+        m_charsPerLine = (width > 0.) ? width/xStep() : 0.;
         m_lines = viewport()->height()/yStep();
-        if (m_chars && m_lines) {
-            verticalScrollBar()->setRange(0, m_dataSize/m_chars);
-            verticalScrollBar()->setValue(m_dataStart/m_chars);
+        if (m_charsPerLine && m_lines) {
+            verticalScrollBar()->setRange(0, m_dataSize/m_charsPerLine);
+            verticalScrollBar()->setValue(m_dataStart/m_charsPerLine);
         } else {
             verticalScrollBar()->setRange(0, 0);
         }
-    }    void paintEvent(QPaintEvent *) override {
+    }
+protected:
+    void paintEvent(QPaintEvent *ev) override {
         QElapsedTimer time;
         time.start();
         QPainter p{viewport()};
-        QPointF pos;
-        QPointF const step{xStep(), 0.};
+        QPoint pos;
+        QPoint const step{xStep(), 0};
         auto dividerX = m_addressChars*xStep() + m_dataMargin/2.;
         p.drawLine(dividerX, 0, dividerX, viewport()->height());
         int offset = 0;
-        while (offset < m_chars*m_lines && m_dataStart + offset < m_dataSize) {
+        QRect rRect = ev->rect();
+        while (offset < m_charsPerLine*m_lines && m_dataStart + offset < m_dataSize) {
             const auto address = QString::number(m_dataStart + offset, 16);
             pos += step * (m_addressChars - address.size());
             for (auto c : address) {
-                drawChar(pos, c, Qt::black, Qt::white, p);
+                if (QRect(pos, m_glyphSize).intersects(rRect))
+                    drawChar(pos, c, Qt::black, Qt::white, p);
                 pos += step;
             }
-            pos += {m_dataMargin, 0.};
-            auto bytes = std::min(m_dataSize - offset, (size_t)m_chars);
+            pos += {m_dataMargin, 0};
+            auto bytes = std::min(m_dataSize - offset, (size_t)m_charsPerLine);
             for (int n = bytes; n; n--) {
-                drawChar(pos, decode(m_data[m_dataStart + offset++]), Qt::red, Qt::white, p);
+                if (QRect(pos, m_glyphSize).intersects(rRect))
+                    drawChar(pos, decode(m_data[m_dataStart + offset]), Qt::red, Qt::white, p);
                 pos += step;
+                offset ++;
             }
-            pos = {0., pos.y() + yStep()};
+            pos = {0, pos.y() + yStep()};
         }
-        newTime(time.elapsed());
+        newStatus(QStringLiteral("%1ms").arg(time.nsecsElapsed()/1e6));
     }
     void resizeEvent(QResizeEvent *) override {
         initData();
     }
-    void scrollContentsBy(int, int) override {
-        m_dataStart = verticalScrollBar()->value() * (size_t)m_chars;
-        viewport()->update();
+    void scrollContentsBy(int, int dy) override {
+        m_dataStart = verticalScrollBar()->value() * (size_t)m_charsPerLine;
+        viewport()->scroll(0, dy * m_glyphSize.height(), viewport()->rect());
     }
 public:
     HexView(QWidget * parent = nullptr) : HexView(nullptr, 0, parent) {}
     HexView(const char * data, size_t size, QWidget * parent = nullptr) :
         QAbstractScrollArea{parent}, m_data(data), m_dataSize(size)
     {
-        const QFontMetrics fm(m_font);
+        QRectF glyphRectF{0., 0., 1., 1.};
         for (int i = 0x20; i < 0xE0; ++i)
-            m_glyphRect = m_glyphRect.united(fm.boundingRect(CP437[i]));
-        m_glyphPos = {-m_glyphRect.left(), -m_glyphRect.top()};
+            glyphRectF = glyphRectF.united(m_fm.boundingRect(CP437[i]));
+        m_glyphPos = -glyphRectF.topLeft();
+        m_glyphSize = QSize(std::ceil(glyphRectF.width()), std::ceil(glyphRectF.height()));
         initData();
     }
     void setData(const char * data, size_t size) {
@@ -114,7 +125,7 @@ public:
         initData();
         viewport()->update();
     }
-    Q_SIGNAL void newTime(int);
+    Q_SIGNAL void newStatus(const QString &);
 };
 
 int main(int argc, char ** argv) {
@@ -142,7 +153,7 @@ int main(int argc, char ** argv) {
         std::iota(data.begin(), data.end(), char(0));
         view.setData(data.data(), data.size());
     });
-    QObject::connect(&view, &HexView::newTime, &status, QOverload<int>::of(&QLabel::setNum));
+    QObject::connect(&view, &HexView::newStatus, &status, &QLabel::setText);
     charset.click();
     ui.resize(1000, 800);
     ui.show();

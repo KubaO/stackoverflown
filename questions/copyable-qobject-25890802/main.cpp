@@ -2,15 +2,42 @@
 #include <QtCore>
 #include <private/qobject_p.h>
 #include <private/qorderedmutexlocker_p.h>
+#include <private/qthread_p.h>
 #include <type_traits>
 
 static QBasicMutex qObjectMutexPool[131];
 void (*qDestroyed)(QAbstractDeclarativeData *, QObject *) = 0;
 
-QBasicMutex *pool() {
-   void *ref = reinterpret_cast<void**>(&QAbstractDeclarativeData::destroyed);
+QBasicMutex *getPool() {
+   void *ref = reinterpret_cast<void**>(&qDestroyed);
    void *target = static_cast<void*>(&qObjectMutexPool);
+   auto offset = static_cast<char*>(target) - static_cast<char*>(ref);
+   void *poolTarget = static_cast<void*>(&QAbstractDeclarativeData::destroyed);
+   char *poolRef = static_cast<char*>(poolTarget) + offset;
+   return reinterpret_cast<QBasicMutex*>(poolRef);
 }
+
+static inline QMutex *signalSlotLock(const QObject *o)
+{
+   static auto *pool = getPool();
+   return static_cast<QMutex*>(
+            &pool[uint(quintptr(o)) % sizeof(pool)/sizeof(QBasicMutex)]);
+}
+
+class ObjectConnectionListVector : public QVector<QObjectPrivate::ConnectionList>
+{
+public:
+   bool orphaned = false; //the QObject owner of this vector has been destroyed while the vector was inUse
+   bool dirty = false;    //some Connection have been disconnected (their receiver is 0) but not removed from the list yet
+   int inUse = 0;         //number of functions that are currently accessing this object or its connections
+   QObjectPrivate::ConnectionList allsignals;
+   ObjectConnectionListVector() {}
+   QObjectPrivate::ConnectionList &operator[](int at) {
+      if (at < 0)
+         return allsignals;
+      return QVector<QObjectPrivate::ConnectionList>::operator[](at);
+   }
+};
 
 /*
     ExtraData *extraData;    // extra data set by the user
@@ -51,6 +78,7 @@ QBasicMutex *pool() {
     QMetaObject *dynamicMetaObject() const;
     */
 void swapObjects(QObject *lhs, QObject *rhs) {
+   bool reparent = true;
    using std::swap;
    Q_ASSERT(lhs && rhs);
    auto const subst = [lhs, rhs](QObject *&ptr) {
@@ -64,9 +92,150 @@ void swapObjects(QObject *lhs, QObject *rhs) {
    auto *dr = QObjectPrivate::get(rhs);
    Q_ASSERT(!dl->wasDeleted && !dl->isDeletingChildren);
    Q_ASSERT(!dr->wasDeleted && !dr->isDeletingChildren);
-   QOrderedMutexLocker locker(signalSlotLock(sender),
-                              signalSlotLock(receiver));
+   Q_ASSERT(!lhs->thread() || lhs->thread() == QThread::currentThread());
+   Q_ASSERT(!rhs->thread() || rhs->thread() == QThread::currentThread());
 
+   // The lhs and rhs will eventually get their d-ptrs swapped. So all that
+   // we do is only what's needed on top of a d-ptr swap.
+   // Generally, the only areas of concern are those where QObject* are stored.
+
+   /* v QObject::d_ptr - swap
+    * v QObjectData::q_ptr - restore
+    * v QObjectData::parent - swap reparent-dependent
+    * v QObjectData::children - swap reparent-dependent
+    */
+
+   /* v QbjectPrivate::extraData - is swapped
+    * v ExtraData::userData - swap is OK
+    * v ExtraData::propertyNames - swap is OK
+    * v ExtraData::propertyValues - swap is OK
+    * v ExtraData::runningTimers - the timers will need re-registration due to
+    *   private data structures.
+    * v ExtraData::eventFilters - swap is OK, parentage is a concern
+    * v ExtraData::objectName - swap is OK
+    */
+
+   /* v QObjectPrivate::threadData - is swapped
+    * QObjectPrivate::connectionLists - needs connection handling
+    * QObjectPrivate::senders - needs connection handling
+    * QObjectPrivate::currentSender - needs connection handling
+    * QObjectPrivate::connectedSignals - needs connection handling
+    * v QObjectPrivate::declarativeData - is swapped
+    * v QObjectPrivate::sharedRefCount - Object-specific, must not be swapped
+    */
+
+   // Timers
+
+   using TimerInfoList = QList<QAbstractEventDispatcher::TimerInfo>;
+   TimerInfoList til_l, til_r;
+   const auto getTimerInfoList = [](QObjectPrivate *d){
+      if (d->threadData && d->threadData->hasEventDispatcher()) {
+         auto *dispatcher = d->threadData->eventDispatcher.load();
+         auto til = dispatcher->registeredTimers(d->q_ptr);
+         if (!til.isEmpty()) dispatcher->unregisterTimers(d->q_ptr);
+         return til;
+      }
+      return TimerInfoList();
+   };
+   til_l = getTimerInfoList(dl);
+   til_r = getTimerInfoList(dr);
+
+
+   // We have to swap all senders and receivers
+   QMutex *senderMutex = signalSlotLock(lhs);
+   QMutexLocker lock(senderMutex);
+   auto *cl = reinterpret_cast<ObjectConnectionListVector*>(dl->connectionLists);
+   if (!cl)
+      return;
+   ++cl->inUse; // prevent the connection list from changing when locks are absent
+   for (int signal = -1; signal < cl->count(); ++signal) {
+      auto *c = (*cl)[signal].first;
+      while (c) {
+         bool needToUnlock = false;
+         QMutex *receiverMutex = 0;
+         if (c->receiver) {
+            receiverMutex = signalSlotLock(c->receiver);
+            needToUnlock = QOrderedMutexLocker::relock(senderMutex, receiverMutex);
+         }
+         if (c->receiver) {
+            c;
+         }
+      }
+   }
+
+   // QObjectData::parent/children
+
+   QObject *parentL = {}, *parentR = {};
+   parentL = dl->parent;
+   parentR = dr->parent;
+   QObjectList childrenL, childrenR;
+   if (reparent) {
+      childrenL = dl->children;
+      childrenR = dr->children;
+      for (auto *cl : qAsConst(childrenL))
+         cl->setParent(nullptr);
+      for (auto *cr : qAsConst(childrenR))
+         cr->setParent(nullptr);
+      dl->setParent_helper(nullptr);
+      dr->setParent_helper(nullptr);
+   }
+
+   /**************
+    * Swap Begin */
+
+   {
+      QOrderedMutexLocker locker(signalSlotLock(lhs), signalSlotLock(rhs));
+      [](QObject *lhs, QObject *rhs){
+         struct Helper : QObject {
+            static QScopedPointer<QObjectData> &getDptr(QObject *obj) {
+               return static_cast<Helper*>(obj)->d_ptr;
+            }
+         };
+         swap(Helper::getDptr(lhs), Helper::getDptr(rhs));
+      }(lhs, rhs);
+      dl->q_ptr = rhs;
+      dr->q_ptr = lhs;
+      QtSharedPointer::ExternalRefCountData *refCountL = {}, *refCountR = {};
+      while (true) {
+         refCountL = dl->sharedRefcount.loadAcquire();
+         if (dl->sharedRefcount.testAndSetRelease(refCountL, 0)) break;
+      }
+      while (true) {
+         refCountR = dr->sharedRefcount.loadAcquire();
+         if (dr->sharedRefcount.testAndSetRelease(refCountR, refCountL)) break;
+      }
+      while (true) {
+         if (dl->sharedRefcount.testAndSetAcquire(0, ))
+      }
+   }
+
+   /* Swap End *
+    ************/
+
+   // QObjectData::parent/children
+
+   if (reparent) {
+      dl->setParent_helper(rhs);
+      dr->setParent_helper(lhs);
+      for (auto *cl : qAsConst(childrenL))
+         cl->setParent(rhs);
+      for (auto *cr : qAsConst(childrenR))
+         cr->setParent(lhs);
+      childrenL.clear();
+      childrenR.clear();
+   }
+
+   // Timers
+
+   const auto setTimerInfoList = [](QObjectPrivate *d, const TimerInfoList &til){
+      if (d->threadData && d->threadData->hasEventDispatcher()) {
+         auto *dispatcher = d->threadData->eventDispatcher.load();
+         for (auto &ti : til)
+            dispatcher->registerTimer(ti.timerId, ti.interval, ti.timerType, d->q_ptr);
+      }
+   };
+   setTimerInfoList(dl, til_r);
+   setTimerInfoList(dr, til_l);
 
 }
 
@@ -233,6 +402,7 @@ bool checkEquals(const CopyableObject &lhs, const CopyableObject &rhs) {
 }
 
 int main() {
+   return 0;
    CopyableObject c1, c2;
    //QPointer<QObject> p1 = &c1;
    c1.setObjectName("foo");

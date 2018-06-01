@@ -23,11 +23,57 @@ qint64 binned(qint64 value, int binaryDigits)
 }
 
 /// A safely destructible thread for perusal by QObjects.
-class Thread : public QThread {
-  using QThread::run;
+class Thread final : public QThread {
+  Q_OBJECT
+  void run() override {
+    connect(QAbstractEventDispatcher::instance(this),
+            &QAbstractEventDispatcher::aboutToBlock,
+            this, &Thread::aboutToBlock);
+    QThread::run();
+  }
+  QAtomicInt inDestructor;
 public:
-  explicit Thread(QObject * parent = 0) : QThread(parent) {}
-  ~Thread() { quit(); wait(); }
+  using QThread::QThread;
+  /// Take an object and prevent timer resource leaks when the object is about
+  /// to become threadless.
+  void takeObject(QObject *obj) {
+    // Work around to prevent
+    // QBasicTimer::stop: Failed. Possibly trying to stop from a different thread
+    static constexpr char kRegistered[] = "__ThreadRegistered";
+    static constexpr char kMoved[] = "__Moved";
+    if (!obj->property(kRegistered).isValid()) {
+      QObject::connect(this, &Thread::finished, obj, [this, obj]{
+        if (!inDestructor.load() || obj->thread() != this)
+          return;
+        // The object is about to become threadless
+        Q_ASSERT(obj->thread() == QThread::currentThread());
+        obj->setProperty(kMoved, true);
+        obj->moveToThread(this->thread());
+      }, Qt::DirectConnection);
+      QObject::connect(this, &QObject::destroyed, obj, [obj]{
+        if (!obj->thread()) {
+          obj->moveToThread(QThread::currentThread());
+          obj->setProperty(kRegistered, {});
+        }
+        else if (obj->thread() == QThread::currentThread() && obj->property(kMoved).isValid()) {
+          obj->setProperty(kMoved, {});
+          QCoreApplication::sendPostedEvents(obj, QEvent::MetaCall);
+        }
+        else if (obj->thread()->eventDispatcher())
+          QTimer::singleShot(0, obj, [obj]{ obj->setProperty(kRegistered, {}); });
+      }, Qt::DirectConnection);
+
+      obj->setProperty(kRegistered, true);
+    }
+    obj->moveToThread(this);
+  }
+  ~Thread() override {
+    inDestructor.store(1);
+    requestInterruption();
+    quit();
+    wait();
+  }
+  Q_SIGNAL void aboutToBlock();
 };
 
 /// An application that monitors event loops in all threads.
@@ -243,16 +289,18 @@ public:
 
 class WorkerObject : public QObject {
   Q_OBJECT
-  int m_trials;
-  double m_probability;
+  int m_trials = 2000;
+  double m_probability = 0.2;
   QBasicTimer m_timer;
-  void timerEvent(QTimerEvent * ev) {
+  void timerEvent(QTimerEvent * ev) override {
     if (ev->timerId() != m_timer.timerId()) return;
     QThread::msleep(std::binomial_distribution<>(m_trials, m_probability)(reng));
   }
 public:
-  WorkerObject(QObject * parent = 0) : QObject(parent), m_trials(2000), m_probability(0.2) {}
+  using QObject::QObject;
+  Q_SIGNAL void stopped();
   Q_SLOT void start() { m_timer.start(0, this); }
+  Q_SLOT void stop() { m_timer.stop(); emit stopped(); }
   int trials() const { return m_trials; }
   Q_SLOT void setTrials(int trials) { m_trials = trials; }
   double probability() const { return m_probability; }
@@ -311,14 +359,16 @@ int main(int argc, char *argv[])
   wLayout.addWidget(&probabilityLabel, 1, 1);
   wLayout.addWidget(&probability, 2, 1);
 
+  QObject::connect(&workerObject, &WorkerObject::stopped, &workerThread, &Thread::quit);
   QObject::connect(&worker, &QGroupBox::toggled, [&](bool run) {
     if (run) {
       workerThread.start();
       QMetaObject::invokeMethod(&workerObject, "start");
-    } else workerThread.quit();
+    } else
+      QMetaObject::invokeMethod(&workerObject, "stop");
   });
   QObject::connect(&timeout, &QAbstractSlider::valueChanged, &app, &MonitoringApp::setTimeout);
-  workerObject.moveToThread(&workerThread);
+  workerThread.takeObject(&workerObject);
   w.show();
   return app.exec();
 }

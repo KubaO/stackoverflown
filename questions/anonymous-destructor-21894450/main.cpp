@@ -1,4 +1,6 @@
-#if 0
+#define SECTION 70
+
+#if SECTION==10
 #include <iostream>
 #include <cmath>
 int main() {
@@ -14,7 +16,7 @@ int main() {
 }
 #endif
 
-#if 0
+#if SECTION==20
 #include <iostream>
 #include <cmath>
 int main() {
@@ -28,7 +30,7 @@ int main() {
 }
 #endif
 
-#if 0
+#if SECTION==30
 #include <iostream>
 #include <cmath>
 int main() {
@@ -42,7 +44,7 @@ int main() {
 }
 #endif
 
-#if 0
+#if SECTION==40
 #include <iostream>
 #include <cmath>
 struct Construct {
@@ -63,7 +65,7 @@ int main() {
 }
 #endif
 
-#if 0
+#if SECTION==50
 #include <iostream>
 #include <cmath>
 struct ConstructDestruct {
@@ -97,7 +99,7 @@ int main() {
 }
 #endif
 
-#if 0
+#if SECTION==60
 #include <iostream>
 #include <cmath>
 #include <cstddef>
@@ -138,7 +140,7 @@ int main() {
 }
 #endif
 
-#if 1
+#if SECTION == 70
 #include <iostream>
 #include <cmath>
 #include <cstddef>

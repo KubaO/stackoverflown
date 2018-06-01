@@ -1,5 +1,7 @@
-TARGET = anonymous-destructor-21894450
-CONFIG   += console c++11
-CONFIG   -= app_bundle qt
-TEMPLATE = app
-SOURCES += main.cpp
+CONFIG += console c++14
+CONFIG -= app_bundle qt
+DEFINES += \
+  QT_DEPRECATED_WARNINGS \
+  QT_DISABLE_DEPRECATED_BEFORE=0x060000 \
+  QT_RESTRICTED_CAST_FROM_ASCII QT_NO_FOREACH
+SOURCES = main.cpp

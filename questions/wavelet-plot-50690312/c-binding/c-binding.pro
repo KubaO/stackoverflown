@@ -5,7 +5,7 @@ DEFINES += \
   QT_DISABLE_DEPRECATED_BEFORE=0x060000 \
   QT_RESTRICTED_CAST_FROM_ASCII
 SOURCES = \
-    c_binding.cpp \
-    main.c
+    main.c \
+    qc_binding.cpp
 HEADERS = \
-    c_binding.h
+    qc_binding.h

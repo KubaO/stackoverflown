@@ -5,9 +5,8 @@
 const double pi = 3.14159265358979323846;
 
 QVector<QPointF> ricker(double f, double length = 2.0, double dt = 0.001) {
-   QVector<QPointF> w;
    size_t N = (length - dt/2.0)/dt;
-   w.resize(N);
+   QVector<QPointF> w(N);
    for (size_t i = 0; i < N; ++i) {
       double t = -length/2 + i*dt;
       w[i].setX(t);

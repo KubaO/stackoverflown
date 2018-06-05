@@ -2,4 +2,5 @@
 *.pro.user*
 *.qmlproject.user*
 /build-*
-questions/build-*
+*/build-*
+*/*/build-*

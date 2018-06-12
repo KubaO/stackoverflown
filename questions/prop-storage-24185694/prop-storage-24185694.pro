@@ -1,18 +1,8 @@
-#-------------------------------------------------
-#
-# Project created by QtCreator 2014-06-12T12:23:40
-#
-#-------------------------------------------------
-
-QT       += core
-
-QT       -= gui
-
-TARGET = prop-storage-24185694
-CONFIG   += console
-CONFIG   -= app_bundle
-
-TEMPLATE = app
-
-
-SOURCES += main.cpp
+QT = core
+CONFIG += c++14 console
+CONFIG -= app_bundle
+SOURCES = main.cpp
+DEFINES += \
+  QT_DEPRECATED_WARNINGS \
+  QT_DISABLE_DEPRECATED_BEFORE=0x060000 \
+  QT_RESTRICTED_CAST_FROM_ASCII

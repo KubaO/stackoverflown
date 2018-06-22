@@ -1,4 +1,5 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/curl-50975613
+#define CURL_NO_OLDIES
 #include <QtWidgets>
 #include <curl/curl.h>
 #include <sys/stat.h>

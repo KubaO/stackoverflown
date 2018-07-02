@@ -56,9 +56,6 @@ public:
       QIODevice(*new AppPipePrivate, parent) {
       addOther(other);
    }
-   AppPipe(QObject *parent = 0) :
-      QIODevice(*new AppPipePrivate, parent) {
-   }
    ~AppPipe() Q_DECL_OVERRIDE {}
    void addOther(AppPipe *other) {
       if (other) {
@@ -155,7 +152,7 @@ class TestAppPipe : public QObject {
       data2 = randomData();
    }
    Q_SLOT void sizes() {
-      QCOMPARE(sizeof(AppPipe), sizeof(QObject));
+      QCOMPARE(sizeof(AppPipe), sizeof(QIODevice));
    }
    Q_SLOT void basic() {
       PipePair p;

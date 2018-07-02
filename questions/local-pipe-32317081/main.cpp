@@ -26,6 +26,7 @@ public:
 class AppPipe : public QIODevice {
    Q_OBJECT
    Q_DECLARE_PRIVATE(AppPipe)
+   static inline int intLen(qint64 len) { return std::min(len, qint64(INT_MAX)); }
    Q_SLOT void _a_write(const QByteArray &data) {
       Q_D(AppPipe);
       if (!(d->openMode & QIODevice::ReadOnly)) return; // We must be readable.
@@ -35,7 +36,7 @@ class AppPipe : public QIODevice {
    }
    void hasOutgoingLong(const char *data, qint64 len) {
       while (len) {
-         qint64 const size = std::min(qint64(INT_MAX), len);
+         int const size = intLen(len);
          emit hasOutgoing(QByteArray(data, size));
          data += size;
          len -= size;
@@ -108,28 +109,33 @@ public:
          memcpy(d->writeBuffer.reserve(len), data, len);
       return len;
    }
-   qint64 readData(char *data, qint64 len) Q_DECL_OVERRIDE {
 #if QT_VERSION < QT_VERSION_CHECK(5,7,0)
+   qint64 readData(char *data, qint64 len) Q_DECL_OVERRIDE {
       Q_D(AppPipe);
       qint64 hadRead = 0;
       while (len && !d->buffer.isEmpty()) {
-         qint64 nextSize = d->buffer.nextDataBlockSize();
-         int size = d->buffer.read(data, std::min(len, nextSize));
+         int size = d->buffer.read(data, intLen(len));
          hadRead += size;
          data += size;
          len -= size;
       }
       return hadRead;
-#else
-      Q_UNUSED(data); Q_UNUSED(len);
-      return 0; // all the data is in the read buffer already
-#endif
    }
-#if QT_VERSION < QT_VERSION_CHECK(5,7,0)
    bool canReadLine() const Q_DECL_OVERRIDE {
       Q_D(const AppPipe);
       return d->buffer.indexOf('\n') != -1 || QIODevice::canReadLine();
    }
+   qint64 bytesAvailable() const Q_DECL_OVERRIDE {
+      Q_D(const AppPipe);
+      return QIODevice::bytesAvailable() + d->buffer.size();
+   }
+   qint64 bytesToWrite() const Q_DECL_OVERRIDE {
+      Q_D(const AppPipe);
+      return QIODevice::bytesToWrite() + d->writeBuffer.size();
+   }
+#else
+   // all the data is in the read buffer already
+   qint64 readData(char *, qint64) Q_DECL_OVERRIDE { return 0; }
 #endif
    bool isSequential() const Q_DECL_OVERRIDE { return true; }
    Q_SIGNAL void hasOutgoing(const QByteArray &);
@@ -148,7 +154,6 @@ class TestAppPipe : public QObject {
       end1.flush();
       QCOMPARE(end2.readAll(), QByteArray(hello));
    }
-
 };
 
 QTEST_MAIN(TestAppPipe)

@@ -109,7 +109,13 @@ public:
          memcpy(d->writeBuffer.reserve(len), data, len);
       return len;
    }
-#if QT_VERSION < QT_VERSION_CHECK(5,7,0)
+   bool isSequential() const Q_DECL_OVERRIDE { return true; }
+   Q_SIGNAL void hasOutgoing(const QByteArray &);
+   Q_SIGNAL void hasIncoming(const QByteArray &);
+#if QT_VERSION >= QT_VERSION_CHECK(5,7,0)
+   // all the data is in the read buffer already
+   qint64 readData(char *, qint64) Q_DECL_OVERRIDE { return 0; }
+#else
    qint64 readData(char *data, qint64 len) Q_DECL_OVERRIDE {
       Q_D(AppPipe);
       qint64 hadRead = 0;
@@ -133,13 +139,7 @@ public:
       Q_D(const AppPipe);
       return QIODevice::bytesToWrite() + d->writeBuffer.size();
    }
-#else
-   // all the data is in the read buffer already
-   qint64 readData(char *, qint64) Q_DECL_OVERRIDE { return 0; }
 #endif
-   bool isSequential() const Q_DECL_OVERRIDE { return true; }
-   Q_SIGNAL void hasOutgoing(const QByteArray &);
-   Q_SIGNAL void hasIncoming(const QByteArray &);
 };
 
 class TestAppPipe : public QObject {
@@ -199,6 +199,9 @@ class TestAppPipe : public QObject {
    Q_SLOT void bigDataUnbuffered() {
       PipePair p(QIODevice::Unbuffered);
       runBigData(p);
+   }
+   Q_SLOT void cleanupTestCase() {
+      data1.clear(); data2.clear();
    }
 };
 

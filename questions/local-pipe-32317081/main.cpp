@@ -144,15 +144,61 @@ public:
 
 class TestAppPipe : public QObject {
    Q_OBJECT
+   QByteArray data1, data2;
+   struct PipePair {
+      AppPipe end1, end2;
+      PipePair(QIODevice::OpenMode mode = QIODevice::NotOpen) :
+         end1(QIODevice::ReadWrite | mode), end2(&end1, QIODevice::ReadWrite | mode) {}
+   };
+   Q_SLOT void initTestCase() {
+      data1 = randomData();
+      data2 = randomData();
+   }
+   Q_SLOT void sizes() {
+      QCOMPARE(sizeof(AppPipe), sizeof(QObject));
+   }
    Q_SLOT void basic() {
-      AppPipe end1(QIODevice::ReadWrite);
-      AppPipe end2(&end1, QIODevice::ReadWrite);
-      QVERIFY(end1.isOpen() && end1.isWritable() && end1.isReadable());
-      QVERIFY(end2.isOpen() && end2.isWritable() && end2.isReadable());
+      PipePair p;
+      QVERIFY(p.end1.isOpen() && p.end1.isWritable() && p.end1.isReadable());
+      QVERIFY(p.end2.isOpen() && p.end2.isWritable() && p.end2.isReadable());
       static const char hello[] = "Hello There!";
-      end1.write(hello);
-      end1.flush();
-      QCOMPARE(end2.readAll(), QByteArray(hello));
+      p.end1.write(hello);
+      p.end1.flush();
+      QCOMPARE(p.end2.readAll(), QByteArray(hello));
+   }
+   static QByteArray randomData(int const size = 1024*1024*32) {
+      QByteArray data;
+      data.resize(size);
+      char *const d = data.data();
+      for (char *p = d+data.size()-1; p >= d; --p)
+         *p = qrand();
+      Q_ASSERT(data.size() == size);
+      return data;
+   }
+   static void randomChunkWrite(AppPipe *dev, const QByteArray &payload) {
+      for (int written = 0, left = payload.size(); left; ) {
+         int const chunk = std::min(qrand() % 82931, left);
+         dev->write(payload.mid(written, chunk));
+         left -= chunk; written += chunk;
+      }
+      dev->flush();
+   }
+   void runBigData(PipePair &p) {
+      Q_ASSERT(!data1.isEmpty() && !data2.isEmpty());
+      randomChunkWrite(&p.end1, data1);
+      randomChunkWrite(&p.end2, data2);
+      QCOMPARE(p.end1.bytesAvailable(), qint64(data2.size()));
+      QCOMPARE(p.end2.bytesAvailable(), qint64(data1.size()));
+      QCOMPARE(p.end1.readAll(), data2);
+      QCOMPARE(p.end2.readAll(), data1);
+   }
+   Q_SLOT void bigDataBuffered() {
+      PipePair p;
+      runBigData(p);
+   }
+   Q_SLOT void bigDataUnbuffered() {
+      PipePair p(QIODevice::Unbuffered);
+      runBigData(p);
    }
 };
 

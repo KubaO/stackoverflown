@@ -1,5 +1,6 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/stream-qwidgetlistitem-51403419
 #include <QtWidgets>
+#include <QtTest>
 
 template <typename T> bool checkTypeEnum() {
    auto const &en = QMetaEnum::fromType<T>();
@@ -26,7 +27,7 @@ class Layer : public QListWidgetItem {
    Q_GADGET
 public:
    enum LayerType { // names must match type names
-      RasterLayer = QListWidgetItem::UserType,
+      RasterLayer = QGraphicsItem::UserType+1,
       VectorLayer
    };
    Q_ENUM(LayerType)
@@ -47,13 +48,15 @@ public:
    Layer(const Layer &);
    QString name() const { return m_name; }
    void setName(const QString &n) { m_name = n; }
+   ~Layer() override = default;
 protected:
    using Format = quint8;
    Layer(const QString &name, int type);
    static void invalidFormat(QDataStream &);
-
+   template <typename T> T &assign(const T& o) { return static_cast<T&>(assignLayer(o)); }
 private:
    QString m_name;
+   Layer& assignLayer(const Layer &);
 };
 
 //
@@ -69,6 +72,15 @@ QListWidgetItem *Layer::clone() const {
    const QMetaType mt(typeId());
    Q_ASSERT(mt.isValid());
    return reinterpret_cast<QListWidgetItem*>(mt.create(this));
+}
+
+Layer &Layer::assignLayer(const Layer &o) {
+   Q_ASSERT(o.type() == type());
+   const QMetaType mt(typeId());
+   Q_ASSERT(mt.isValid());
+   Layer::~Layer();
+   mt.construct(this, &o);
+   return *this;
 }
 
 void Layer::write(QDataStream &ds) const {
@@ -121,6 +133,8 @@ QDataStream &operator>>(QDataStream &ds, Layer *&l) {
 class RasterLayer : public Layer, public QGraphicsPixmapItem {
 public:
    QGraphicsItem *it() override { return this; }
+   int type() const override { return Layer::type(); }
+   RasterLayer &operator=(const RasterLayer &o) { return assign(o); }
    void write(QDataStream &) const override;
    void read(QDataStream &) override;
    RasterLayer(const RasterLayer &);
@@ -162,6 +176,8 @@ void RasterLayer::read(QDataStream &ds) {
 class VectorLayer : public Layer, public QGraphicsPathItem {
 public:
    QGraphicsItem *it() override { return this; }
+   int type() const override { return Layer::type(); }
+   VectorLayer &operator=(const VectorLayer &o) { return assign(o); }
    void write(QDataStream &) const override;
    void read(QDataStream &) override;
    VectorLayer(const VectorLayer &);
@@ -200,71 +216,130 @@ void VectorLayer::read(QDataStream &ds) {
 
 //
 
-void test0() {
-   Q_ASSERT(checkTypeEnum<Layer::LayerType>());
-}
-
-void test1(QDataStream &ds) {
-   ds.device()->reset();
-   RasterLayer raster;
-   VectorLayer vector;
-   ds << raster << vector;
-
-   ds.device()->reset();
-   QVector<Layer*> layers(2);
-   Q_ASSERT(!layers[0] && !layers[1]);
-   ds >> layers[0] >> layers[1];
-   Q_ASSERT(layers[0] && layers[1]);
-   qDeleteAll(layers);
-}
-
-void test2(QDataStream &ds) {
-   ds.device()->reset();
-   RasterLayer raster;
-   VectorLayer vector;
-   QList<Layer*> layers;
-   layers << &raster << &vector;
-   ds << layers;
-
-   ds.device()->reset();
-   layers.clear();
-   Q_ASSERT(layers.isEmpty());
-   ds >> layers;
-   Q_ASSERT(layers.size() == 2);
-   Q_ASSERT(!layers.contains({}));
-   qDeleteAll(layers);
-}
-
-void test3(QDataStream &ds) {
-   ds.device()->reset();
-   RasterLayer raster;
-   VectorLayer vector;
-   auto vr = QVariant::fromValue(raster);
-   auto vv = QVariant::fromValue(vector);
-   ds << vr << vv;
-
-   ds.device()->reset();
-   vv.clear();
-   vr.clear();
-   Q_ASSERT(vr.isNull() && vv.isNull());
-   ds >> vr >> vv;
-   Q_ASSERT(!vr.isNull() && !vv.isNull());
-   Q_ASSERT(vr.userType() == qMetaTypeId<RasterLayer>());
-   Q_ASSERT(vv.userType() == qMetaTypeId<VectorLayer>());
-}
-
-void test() {
-   test0();
+class LayerTest : public QObject {
+   Q_OBJECT
    QBuffer buf;
-   buf.open(QIODevice::ReadWrite);
-   QDataStream ds(&buf);
-   test1(ds);
-   test2(ds);
-   test3(ds);
-}
+   QDataStream ds{&buf};
 
-int main(int argc, char *argv[]) {
-   QApplication a(argc, argv);
-   test();
-}
+private slots:
+   void initTestCase() {
+      buf.open(QIODevice::ReadWrite);
+   }
+
+   void testTypes() {
+      QVERIFY(checkTypeEnum<Layer::LayerType>());
+   }
+
+   void testClone() {
+      RasterLayer raster("foo");
+      QScopedPointer<QListWidgetItem> clone(raster.clone());
+      auto *raster2 = static_cast<RasterLayer*>(clone.data());
+
+      QCOMPARE(raster2->type(), raster.type());
+      QCOMPARE(raster2->name(), raster.name());
+   }
+
+   void testValueIO() {
+      ds.device()->reset();
+      RasterLayer raster("foo");
+      VectorLayer vector("bar");
+      ds << raster << vector;
+
+      ds.device()->reset();
+      RasterLayer raster2;
+      VectorLayer vector2;
+      ds >> raster2 >> vector2;
+
+      QCOMPARE(raster2.name(), raster.name());
+      QCOMPARE(vector2.name(), vector.name());
+   }
+
+   void testPointerIO() {
+      ds.device()->reset();
+      RasterLayer raster("foo");
+      VectorLayer vector("bar");
+      ds << &raster << &vector;
+
+      ds.device()->reset();
+      Layer *raster2 = {}, *vector2 = {};
+      ds >> raster2 >> vector2;
+
+      QVERIFY(raster2 && vector2);
+      QCOMPARE(raster2->type(), Layer::RasterLayer);
+      QCOMPARE(vector2->type(), Layer::VectorLayer);
+      QCOMPARE(raster2->name(), raster.name());
+      QCOMPARE(vector2->name(), vector.name());
+      delete raster2;
+      delete vector2;
+   }
+
+   void testValueContainerIO() {
+      ds.device()->reset();
+      QVector<RasterLayer> rasters(2);
+      QList<VectorLayer> vectors;
+      vectors << VectorLayer() << VectorLayer();
+      ds << rasters << vectors;
+
+      ds.device()->reset();
+      rasters.clear();
+      vectors.clear();
+      ds >> rasters >> vectors;
+
+      QCOMPARE(rasters.size(), 2);
+      QCOMPARE(vectors.size(), 2);
+   }
+
+   void testPointerConteinerIO() {
+      ds.device()->reset();
+      RasterLayer raster;
+      VectorLayer vector;
+      QList<Layer*> layers;
+      layers << &raster << &vector;
+      ds << layers;
+
+      ds.device()->reset();
+      layers.clear();
+      QVERIFY(layers.isEmpty());
+      ds >> layers;
+      QCOMPARE(layers.size(), 2);
+      QVERIFY(!layers.contains({}));
+      qDeleteAll(layers);
+   }
+
+   void testVariantIO() {
+      ds.device()->reset();
+      RasterLayer raster;
+      VectorLayer vector;
+      auto vr = QVariant::fromValue(raster);
+      auto vv = QVariant::fromValue(vector);
+      ds << vr << vv;
+
+      ds.device()->reset();
+      vv.clear();
+      vr.clear();
+      QVERIFY(vr.isNull() && vv.isNull());
+      ds >> vr >> vv;
+      QVERIFY(!vr.isNull() && !vv.isNull());
+      QCOMPARE(vr.userType(), qMetaTypeId<RasterLayer>());
+      QCOMPARE(vv.userType(), qMetaTypeId<VectorLayer>());
+   }
+
+   void testVariantContainerIO() {
+      ds.device()->reset();
+      QVariantList layers;
+      layers << QVariant::fromValue(RasterLayer())
+             << QVariant::fromValue(VectorLayer());
+      ds << layers;
+
+      ds.device()->reset();
+      layers.clear();
+      ds >> layers;
+      QCOMPARE(layers.size(), 2);
+      QVERIFY(!layers.contains({}));
+      QCOMPARE(layers.at(0).userType(), qMetaTypeId<RasterLayer>());
+      QCOMPARE(layers.at(1).userType(), qMetaTypeId<VectorLayer>());
+   }
+};
+
+QTEST_MAIN(LayerTest)
 #include "main.moc"

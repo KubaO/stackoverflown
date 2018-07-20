@@ -1,7 +1,13 @@
 QT = widgets
-CONFIG += c++11
-TARGET = opencv-21246766
+CONFIG += c++14
+DEFINES += \
+  QT_DEPRECATED_WARNINGS \
+  QT_DISABLE_DEPRECATED_BEFORE=0x060000 \
+  QT_RESTRICTED_CAST_FROM_ASCII
 TEMPLATE = app
 SOURCES = main.cpp
-macx:LIBS += -L /opt/local/lib
 LIBS += -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_videoio
+macx {
+  INCLUDEPATH += /opt/local/include
+  LIBS += -L /opt/local/lib
+}

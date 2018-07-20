@@ -5,7 +5,6 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 } else {
   QT += gui
   QMAKE_CXXFLAGS += -std=c++14
-  macx: DEFINES += MACPORTS_QT4_BINARY_COMPAT_FIX
 }
 DEFINES += \
   QT_DEPRECATED_WARNINGS \

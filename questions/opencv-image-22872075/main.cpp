@@ -1,98 +1,118 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/opencv-image-22872075
 // This project is compatible with Qt 4 and Qt 5
-#ifdef MACPORTS_QT4_BINARY_COMPAT_FIX
-#define QT3_SUPPORT
-#endif
 #include <QtGui>
 #if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
 #include <QtWidgets>
-#else
-#include <private/qimage_p.h>
 #endif
 #include <opencv2/opencv.hpp>
 
-namespace compat { // c.f. https://stackoverflow.com/q/49862299/1329652
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
-using QT_PREPEND_NAMESPACE(QImage);
-#else
-using Q_QImage = QT_PREPEND_NAMESPACE(QImage);
-using Q_QImageData = QT_PREPEND_NAMESPACE(QImageData);
-class QImageData : public Q_QImageData {
-public:
-   void (*cleanupFunction)(void*) = {};
-   void *cleanupInfo = {};
-   explicit QImageData(const Q_QImageData &o) {
-      qDebug() << "dup from" << &o << "to" << this;
-      *(Q_QImageData*)(this) = o;
-      qDebug() << "dup done";
-   }
-   ~QImageData() {
-      qDebug() << __FUNCTION__;
-      if (cleanupFunction)
-         cleanupFunction(cleanupInfo);
-   }
+struct ConvData {
+   QImage::Format dst;
+   int srcChannels;
+   size_t outElemSize;
+   int code1;
+   int code2;
+   enum { SATALPHA = -2, TAKEALPHA = -1 };
 };
-class QImage : public Q_QImage {
-   enum { ReplacedFlag = 0x0EDA23C0, ReplacedMask = 0x0FFFFFF0 };
-   int &flags() {
-      return *reinterpret_cast<int*>((&data_ptr()->offset) + 1);
-   }
-   bool isReplaced() { return (flags() & ReplacedMask) == ReplacedFlag; }
-   void setReplaced(bool r) { flags() = (flags() & ~ReplacedMask) | (r ? ReplacedFlag : 0); }
-public:
-   using Q_QImage::Q_QImage;
-   QImage(uchar *data, int width, int height, int bytesPerLine, Format format,
-          void (*cleanupFunction)(void*) = {}, void *cleanupInfo = {}) :
-      Q_QImage(data, width, height, bytesPerLine, format)
-   {
-      qDebug() << __FUNCTION__;
-      Q_ASSERT(!data_ptr() || !isReplaced());
-      if (data_ptr()) {
-         bool own_data = data_ptr()->own_data;
-         bool ro_data = data_ptr()->ro_data;
-         bool has_alpha_clut = data_ptr()->has_alpha_clut;
-         bool is_cached = data_ptr()->is_cached;
-         auto *d1 = new QImageData(*data_ptr());
-         d1->cleanupFunction = cleanupFunction;
-         d1->cleanupInfo = cleanupInfo;
-         auto *d2 = data_ptr();
-         data_ptr() = d1;
-         d2->colortable.~QVector();
-   #ifndef QT_NO_IMAGE_TEXT
-         //d2->text.~QMap();
-   #endif
-         operator delete(d2); // can't invoke the destructor as it would free the data
-         setReplaced(true);
-         Q_ASSERT(own_data == d1->own_data);
-         Q_ASSERT(ro_data == d1->ro_data);
-         Q_ASSERT(has_alpha_clut == d1->has_alpha_clut);
-         Q_ASSERT(is_cached == d1->is_cached);
-      }
-   }
-   ~QImage() override {
-      qDebug() << __FUNCTION__;
-      auto d = static_cast<QImageData*>(data_ptr());
-      if (d && isReplaced()) {
-         if (!d->ref.deref()) {
-            delete d;
-            data_ptr() = nullptr;
-         } else
-            d->ref.ref(); // prevent the QImage destructor from freeing the wrong type
-      }
-   }
+
+const ConvData convData[] = {
+   { QImage::Format_Invalid, 0, 0, 0, 0 },
+   { QImage::Format_RGB32, 1, 4, cv::COLOR_GRAY2BGRA, -1 },
+   { QImage::Format_RGB32, 3, 4, cv::COLOR_BGR2BGRA, -1 },
+   { QImage::Format_RGB32, 4, 4, ConvData::SATALPHA, -1 },
+   { QImage::Format_ARGB32, 1, 4, cv::COLOR_GRAY2BGRA, -1 },
+   { QImage::Format_ARGB32, 3, 4, cv::COLOR_BGR2BGRA, -1 },
+   { QImage::Format_ARGB32, 4, 4, -1, -1 },
+   { QImage::Format_ARGB32_Premultiplied, 1, 4, cv::COLOR_GRAY2BGRA, -1 },
+   { QImage::Format_ARGB32_Premultiplied, 3, 4, cv::COLOR_BGR2BGRA, -1 },
+   { QImage::Format_ARGB32_Premultiplied, 4, 4, cv::COLOR_RGBA2mRGBA, -1 },
+   { QImage::Format_RGBX8888, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBX8888, 3, 4, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBX8888, 4, 4, ConvData::SATALPHA, cv::COLOR_BGRA2RGBA },
+   { QImage::Format_RGBA8888, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBA8888, 3, 4, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBA8888, 4, 4, cv::COLOR_BGRA2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, 3, 4, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, 4, 4, cv::COLOR_BGRA2RGBA, cv::COLOR_RGBA2mRGBA },
+   { QImage::Format_RGBA8888_Premultiplied, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, 3, 4, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, 4, 4, cv::COLOR_BGRA2RGBA, cv::COLOR_RGBA2mRGBA },
+   { QImage::Format_RGB888, 1, 3, cv::COLOR_GRAY2BGR, -1 },
+   { QImage::Format_RGB888, 3, 3, -1, -1 },
+   { QImage::Format_RGB888, 4, 3, cv::COLOR_RGBA2BGR, -1 },
+   { QImage::Format_RGB16, 1, 2, cv::COLOR_GRAY2BGR565, -1 },
+   { QImage::Format_RGB16, 3, 2, cv::COLOR_BGR2BGR565, -1 },
+   { QImage::Format_RGB16, 4, 2, cv::COLOR_RGBA2BGR565, -1 },
+   { QImage::Format_RGB555, 1, 2, cv::COLOR_GRAY2BGR555, -1 },
+   { QImage::Format_RGB555, 3, 2, cv::COLOR_BGR2BGR555, -1 },
+   { QImage::Format_RGB555, 4, 2, cv::COLOR_RGBA2BGR555, -1 },
+   { QImage::Format_Grayscale8, 1, 1, -1, -1 },
+   { QImage::Format_Grayscale8, 3, 1, cv::COLOR_BGR2GRAY, -1 },
+   { QImage::Format_Grayscale8, 4, 1, cv::COLOR_BGRA2GRAY, -1 },
+   { QImage::Format_Alpha8, 1, 1, -1, -1 },
+   { QImage::Format_Alpha8, 3, 1, ConvData::SATALPHA, -1 },
+   { QImage::Format_Alpha8, 4, 1, ConvData::TAKEALPHA, -1 }
 };
-#endif
+
+const ConvData &getConvData(const cv::Mat &m, QImage::Format format) {
+   for (auto &d : convData)
+      if (d.dst == format && d.srcChannels == m.channels())
+         return d;
+   return convData[0];
 }
 
-QImage img;
+void convert(const cv::Mat &src, cv::Mat &dst, int code) {
+   using El = cv::Vec4b;
+   if (code == ConvData::SATALPHA) {
+      for (auto it = dst.begin<El>(); it != dst.end<El>(); it++)
+         (*it)[3] = 0xFF;
+   }
+   else if (code == ConvData::TAKEALPHA) {
+      auto s = src.begin<El>();
+      auto d = dst.begin<uchar>();
+      for (; s != src.end<El>(); s++, d++)
+         *d = (*s)[3] ;
+   }
+   else if (code != -1)
+      cv::cvtColor(src, dst, code);
+}
 
-compat::QImage imageFromMat(cv::Mat const& src) {
-   Q_ASSERT(src.type() == CV_8UC3);
-   auto *mat = new cv::Mat(src.cols,src.rows,src.type());
-   cvtColor(src, *mat, CV_BGR2RGB);
-   return compat::QImage((uchar*)mat->data, mat->cols, mat->rows, mat->step,
-                         QImage::Format_RGB888,
-                         [](void *mat){ delete static_cast<cv::Mat*>(mat); }, mat);
+QImage imageFromMat(cv::Mat src, QImage::Format format = QImage::Format_Invalid) {
+   // By default, preserve the format
+   if (format == QImage::Format_Invalid) {
+      if (src.channels() == 1)
+         format = QImage::Format_Grayscale8;
+      else if (src.channels() == 3)
+         format = QImage::Format_RGB888;
+      else if (src.channels() == 4)
+         format = QImage::Format_ARGB32;
+   }
+   if (!src.data || !src.u || format == QImage::Format_Invalid)
+      return {};
+   auto data = getConvData(src, format);
+   if (data.dst == QImage::Format_Invalid)
+      return {};
+#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+   bool keepBuffer = CV_XADD(&src.u->refcount, 0) == 1 // sole reference
+         && src.depth() == CV_8U && src.elemSize() == data.outElemSize;
+   if (keepBuffer) {
+      convert(src, src, data.code1);
+      convert(src, src, data.code2);
+      return QImage((uchar*)src.data, src.cols, src.rows, src.step, data.dst,
+                    [](void *m){ delete static_cast<cv::Mat*>(m); }, new cv::Mat(src));
+   }
+#endif
+   QImage dstImg(src.cols, src.rows, data.dst);
+   cv::Mat dst(dstImg.height(), dstImg.width(), 0, dstImg.bits(), dstImg.bytesPerLine());
+   // convert
+
+   return dstImg;
+}
+
+QPixmap pixmapFromMat(cv::Mat &&src) {
+   auto image(imageFromMat(std::move(src)));
+   return QPixmap::fromImage(image);
 }
 
 QPixmap pixmapFromMat(const cv::Mat &src) {
@@ -102,7 +122,7 @@ QPixmap pixmapFromMat(const cv::Mat &src) {
 
 static cv::Scalar randomScalar() {
    static cv::RNG rng(12345);
-   return cv::Scalar(rng.uniform(0,255), rng.uniform(0, 255), rng.uniform(0, 255));
+   return cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
 }
 
 class UIQT : public QWidget {
@@ -110,7 +130,7 @@ class UIQT : public QWidget {
    QGridLayout m_layout{this};
    QLabel m_label;
    QBasicTimer m_timer;
-   cv::Size m_size{100, 100};
+   cv::Size m_size{200, 200};
    void timerEvent(QTimerEvent *ev) override {
       if (ev->timerId() == m_timer.timerId())
          refreshImage();
@@ -123,14 +143,12 @@ public:
    }
    Q_SLOT void refreshImage() {
       cv::Mat mat(m_size, CV_8UC3, randomScalar());
-      m_label.setPixmap(pixmapFromMat(mat));
+      m_label.setPixmap(pixmapFromMat(std::move(mat)));
    }
 };
 
 int main(int argc, char *argv[]) {
    QApplication app(argc, argv);
-   compat::Q_QImageData d1;
-   QImageData d2(d1);
    UIQT w;
    w.show();
    return app.exec();

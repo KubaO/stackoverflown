@@ -6,53 +6,57 @@
 #endif
 #include <opencv2/opencv.hpp>
 
+
+
+
 struct ConvData {
-   QImage::Format dst;
+   QImage::Format dstFormat;
+   int dstCode;
+   int dstChannels() const { return (dstCode >> CV_CN_SHIFT) + 1; }
    int srcChannels;
-   size_t outElemSize;
    int code1;
    int code2;
    enum { SATALPHA = -2, TAKEALPHA = -1 };
 };
 
 const ConvData convData[] = {
-   { QImage::Format_Invalid, 0, 0, 0, 0 },
-   { QImage::Format_RGB32, 1, 4, cv::COLOR_GRAY2BGRA, -1 },
-   { QImage::Format_RGB32, 3, 4, cv::COLOR_BGR2BGRA, -1 },
-   { QImage::Format_RGB32, 4, 4, ConvData::SATALPHA, -1 },
-   { QImage::Format_ARGB32, 1, 4, cv::COLOR_GRAY2BGRA, -1 },
-   { QImage::Format_ARGB32, 3, 4, cv::COLOR_BGR2BGRA, -1 },
-   { QImage::Format_ARGB32, 4, 4, -1, -1 },
-   { QImage::Format_ARGB32_Premultiplied, 1, 4, cv::COLOR_GRAY2BGRA, -1 },
-   { QImage::Format_ARGB32_Premultiplied, 3, 4, cv::COLOR_BGR2BGRA, -1 },
-   { QImage::Format_ARGB32_Premultiplied, 4, 4, cv::COLOR_RGBA2mRGBA, -1 },
-   { QImage::Format_RGBX8888, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
-   { QImage::Format_RGBX8888, 3, 4, cv::COLOR_BGR2RGBA, -1 },
-   { QImage::Format_RGBX8888, 4, 4, ConvData::SATALPHA, cv::COLOR_BGRA2RGBA },
-   { QImage::Format_RGBA8888, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
-   { QImage::Format_RGBA8888, 3, 4, cv::COLOR_BGR2RGBA, -1 },
-   { QImage::Format_RGBA8888, 4, 4, cv::COLOR_BGRA2RGBA, -1 },
-   { QImage::Format_RGBA8888_Premultiplied, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
-   { QImage::Format_RGBA8888_Premultiplied, 3, 4, cv::COLOR_BGR2RGBA, -1 },
-   { QImage::Format_RGBA8888_Premultiplied, 4, 4, cv::COLOR_BGRA2RGBA, cv::COLOR_RGBA2mRGBA },
-   { QImage::Format_RGBA8888_Premultiplied, 1, 4, cv::COLOR_GRAY2RGBA, -1 },
-   { QImage::Format_RGBA8888_Premultiplied, 3, 4, cv::COLOR_BGR2RGBA, -1 },
-   { QImage::Format_RGBA8888_Premultiplied, 4, 4, cv::COLOR_BGRA2RGBA, cv::COLOR_RGBA2mRGBA },
-   { QImage::Format_RGB888, 1, 3, cv::COLOR_GRAY2BGR, -1 },
-   { QImage::Format_RGB888, 3, 3, -1, -1 },
-   { QImage::Format_RGB888, 4, 3, cv::COLOR_RGBA2BGR, -1 },
-   { QImage::Format_RGB16, 1, 2, cv::COLOR_GRAY2BGR565, -1 },
-   { QImage::Format_RGB16, 3, 2, cv::COLOR_BGR2BGR565, -1 },
-   { QImage::Format_RGB16, 4, 2, cv::COLOR_RGBA2BGR565, -1 },
-   { QImage::Format_RGB555, 1, 2, cv::COLOR_GRAY2BGR555, -1 },
-   { QImage::Format_RGB555, 3, 2, cv::COLOR_BGR2BGR555, -1 },
-   { QImage::Format_RGB555, 4, 2, cv::COLOR_RGBA2BGR555, -1 },
-   { QImage::Format_Grayscale8, 1, 1, -1, -1 },
-   { QImage::Format_Grayscale8, 3, 1, cv::COLOR_BGR2GRAY, -1 },
-   { QImage::Format_Grayscale8, 4, 1, cv::COLOR_BGRA2GRAY, -1 },
-   { QImage::Format_Alpha8, 1, 1, -1, -1 },
-   { QImage::Format_Alpha8, 3, 1, ConvData::SATALPHA, -1 },
-   { QImage::Format_Alpha8, 4, 1, ConvData::TAKEALPHA, -1 }
+   { QImage::Format_Invalid, 0, 0, 0, 0, },
+   { QImage::Format_RGB32, CV_8U4, 1, cv::COLOR_GRAY2BGRA, -1 },
+   { QImage::Format_RGB32, CV_8U4, 3, cv::COLOR_BGR2BGRA, -1 },
+   { QImage::Format_RGB32, CV_8U4, 4, ConvData::SATALPHA, -1 },
+   { QImage::Format_ARGB32, CV_8U4, 1, cv::COLOR_GRAY2BGRA, -1 },
+   { QImage::Format_ARGB32, CV_8U4, 3, cv::COLOR_BGR2BGRA, -1 },
+   { QImage::Format_ARGB32, CV_8U4, 4, -1, -1 },
+   { QImage::Format_ARGB32_Premultiplied, CV_8U4, 1, cv::COLOR_GRAY2BGRA, -1 },
+   { QImage::Format_ARGB32_Premultiplied, CV_8U4, 3, cv::COLOR_BGR2BGRA, -1 },
+   { QImage::Format_ARGB32_Premultiplied, CV_8U4, 4, cv::COLOR_RGBA2mRGBA, -1 },
+   { QImage::Format_RGBX8888, CV_8U4, 1, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBX8888, CV_8U4, 3, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBX8888, CV_8U4, 4, ConvData::SATALPHA, cv::COLOR_BGRA2RGBA },
+   { QImage::Format_RGBA8888, CV_8U4, 1, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBA8888, CV_8U4, 3, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBA8888, CV_8U4, 4, cv::COLOR_BGRA2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, CV_8U4, 1, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, CV_8U4, 3, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, CV_8U4, 4, cv::COLOR_BGRA2RGBA, cv::COLOR_RGBA2mRGBA },
+   { QImage::Format_RGBA8888_Premultiplied, CV_8U4, 1, cv::COLOR_GRAY2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, CV_8U4, 3, cv::COLOR_BGR2RGBA, -1 },
+   { QImage::Format_RGBA8888_Premultiplied, CV_8U4, 4, cv::COLOR_BGRA2RGBA, cv::COLOR_RGBA2mRGBA },
+   { QImage::Format_RGB888, CV_8U3, 1, cv::COLOR_GRAY2BGR, -1 },
+   { QImage::Format_RGB888, CV_8U3, 3, -1, -1 },
+   { QImage::Format_RGB888, CV_8U3, 4, cv::COLOR_RGBA2BGR, -1 },
+   { QImage::Format_RGB16, CV_16U1, 1, cv::COLOR_GRAY2BGR565, -1 },
+   { QImage::Format_RGB16, CV_16U1, 3, cv::COLOR_BGR2BGR565, -1 },
+   { QImage::Format_RGB16, CV_16U1, 4, cv::COLOR_RGBA2BGR565, -1 },
+   { QImage::Format_RGB555, CV_16U1, 1, cv::COLOR_GRAY2BGR555, -1 },
+   { QImage::Format_RGB555, CV_16U1, 3, cv::COLOR_BGR2BGR555, -1 },
+   { QImage::Format_RGB555, CV_16U1, 4, cv::COLOR_RGBA2BGR555, -1 },
+   { QImage::Format_Grayscale8, CV_8U1, 1, -1, -1 },
+   { QImage::Format_Grayscale8, CV_8U1, 3, cv::COLOR_BGR2GRAY, -1 },
+   { QImage::Format_Grayscale8, CV_8U1, 4, cv::COLOR_BGRA2GRAY, -1 },
+   { QImage::Format_Alpha8, CV_8U1, 1, -1, -1 },
+   { QImage::Format_Alpha8, CV_8U1, 3, ConvData::SATALPHA, -1 },
+   { QImage::Format_Alpha8, CV_8U1, 4, ConvData::TAKEALPHA, -1 }
 };
 
 const ConvData &getConvData(const cv::Mat &m, QImage::Format format) {
@@ -78,6 +82,9 @@ void convert(const cv::Mat &src, cv::Mat &dst, int code) {
       cv::cvtColor(src, dst, code);
 }
 
+// Mat::convertTo - change depth
+// cv::cvtColor - change channel count
+
 QImage imageFromMat(cv::Mat src, QImage::Format format = QImage::Format_Invalid) {
    // By default, preserve the format
    if (format == QImage::Format_Invalid) {
@@ -88,26 +95,43 @@ QImage imageFromMat(cv::Mat src, QImage::Format format = QImage::Format_Invalid)
       else if (src.channels() == 4)
          format = QImage::Format_ARGB32;
    }
-   if (!src.data || !src.u || format == QImage::Format_Invalid)
-      return {};
    auto data = getConvData(src, format);
-   if (data.dst == QImage::Format_Invalid)
+   if (!src.data || !src.u || format == QImage::Format_Invalid ||
+       data.dst == QImage::Format_Invalid)
       return {};
+
+   QImage dst;
+   cv::Mat dstMat_;
+   cv::Mat *dstMat = &dstMat;
+
+   bool keepBuffer = false;
 #if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
-   bool keepBuffer = CV_XADD(&src.u->refcount, 0) == 1 // sole reference
-         && src.depth() == CV_8U && src.elemSize() == data.outElemSize;
+   keepBuffer = CV_XADD(&src.u->refcount, 0) == 1 // sole reference
+         && (src.depth() == CV_8U || src.depth() == CV_8S)
+         && src.channels() == data.dstChannels();
    if (keepBuffer) {
-      convert(src, src, data.code1);
-      convert(src, src, data.code2);
-      return QImage((uchar*)src.data, src.cols, src.rows, src.step, data.dst,
-                    [](void *m){ delete static_cast<cv::Mat*>(m); }, new cv::Mat(src));
+      dst = QImage((uchar*)src.data, src.cols, src.rows, src.step, data.dstFormat,
+                   [](void *m){ delete static_cast<cv::Mat*>(m); }, new cv::Mat(src));
+      dstMat = &src;
    }
 #endif
-   QImage dstImg(src.cols, src.rows, data.dst);
-   cv::Mat dst(dstImg.height(), dstImg.width(), 0, dstImg.bits(), dstImg.bytesPerLine());
-   // convert
+   if (!keepBuffer) {
+      dst = QImage(src.cols, src.rows, data.dstFormat);
+      dstMat_ = cv::Mat(src.rows, src.cols, data.dstCode, dst.bits(), dst.bytesPerLine());
+   }
 
-   return dstImg;
+   cv::Mat depthMat_;
+   cv::Mat *depthMat = &depthMat;
+
+   if (src.depth() == CV_8U || src.depth() == CV_8S || src.channels() == data.dstChannels())
+      depthMat = &dst;
+
+   double alpha = (src.depth == CV_)
+   if (src.depth() != CV_8U)
+      src.convertTo(src, CV_8U);
+
+
+   return dst;
 }
 
 QPixmap pixmapFromMat(cv::Mat &&src) {

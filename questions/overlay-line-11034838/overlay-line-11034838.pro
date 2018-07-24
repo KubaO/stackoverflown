@@ -4,11 +4,10 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 } else {
     QT = gui
     unix:QMAKE_CXXFLAGS += -std=c++11
-    macx {
-        QMAKE_CXXFLAGS += -stdlib=libc++
-        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
-    }
+    macx:QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.9
 }
-TARGET = overlay-line-11034838
-TEMPLATE = app
+DEFINES += \
+  QT_DEPRECATED_WARNINGS \
+  QT_DISABLE_DEPRECATED_BEFORE=0x060000 \
+  QT_RESTRICTED_CAST_FROM_ASCII
 SOURCES += main.cpp

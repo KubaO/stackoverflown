@@ -5,36 +5,38 @@
 #endif
 
 class Line : public QWidget {
-    void paintEvent(QPaintEvent *) override {
-        QPainter p{this};
+protected:
+   void paintEvent(QPaintEvent *) override {
+        QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         p.drawLine(rect().topLeft(), rect().bottomRight());
     }
 public:
-    using QWidget::QWidget;
+    explicit Line(QWidget *parent = nullptr) : QWidget(parent) {
+       setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
 };
 
 class Window : public QWidget {
     QHBoxLayout layout{this};
-    QLabel left{"Left", this};
-    QLabel right{"Right", this};
+    QPushButton left{"Left"};
+    QLabel right{"Right"};
     Line line{this};
-
+protected:
     void resizeEvent(QResizeEvent *) override {
-        line.setGeometry(rect());
+        line.resize(size());
     }
 public:
-    Window(QWidget * parent = nullptr) : QWidget{parent} {
-        left.setFrameStyle(QFrame::Box | QFrame::Raised);
+    explicit Window(QWidget * parent = nullptr) : QWidget(parent) {
         layout.addWidget(&left);
         right.setFrameStyle(QFrame::Box | QFrame::Raised);
         layout.addWidget(&right);
+        line.raise();
     }
 };
 
-int main(int argc, char *argv[])
-{
-    QApplication app{argc, argv};
+int main(int argc, char *argv[]) {
+    QApplication app(argc, argv);
     Window w;
     w.show();
     return app.exec();

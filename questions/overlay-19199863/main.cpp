@@ -6,34 +6,33 @@
 
 class Overlay : public QWidget {
 public:
-    Overlay(QWidget * parent = nullptr) : QWidget{parent} {
+    explicit Overlay(QWidget *parent = nullptr) : QWidget(parent) {
         setAttribute(Qt::WA_NoSystemBackground);
         setAttribute(Qt::WA_TransparentForMouseEvents);
     }
 protected:
     void paintEvent(QPaintEvent *) override {
-        QPainter{this}.fillRect(rect(), {80, 80, 255, 128});
+        QPainter(this).fillRect(rect(), {80, 80, 255, 128});
     }
 };
 
-class Filter : public QObject {
+class OverlayFactoryFilter : public QObject {
     QPointer<Overlay> m_overlay;
-    QPointer<QWidget> m_overlayOn;
 public:
-    Filter(QObject * parent = nullptr) : QObject{parent} {}
+    explicit OverlayFactoryFilter(QObject *parent = nullptr) : QObject(parent) {}
 protected:
-    bool eventFilter(QObject * obj, QEvent * ev) override {
+    bool eventFilter(QObject *obj, QEvent *ev) override {
         if (!obj->isWidgetType()) return false;
         auto w = static_cast<QWidget*>(obj);
         if (ev->type() == QEvent::MouseButtonPress) {
-            if (!m_overlay) m_overlay = new Overlay(w->parentWidget());
-            m_overlay->setGeometry(w->geometry());
-            m_overlayOn = w;
+            if (!m_overlay) m_overlay = new Overlay;
+            m_overlay->setParent(w);
+            m_overlay->resize(w->size());
             m_overlay->show();
         }
         else if (ev->type() == QEvent::Resize) {
-            if (m_overlay && m_overlayOn == w)
-                m_overlay->setGeometry(w->geometry());
+            if (m_overlay && m_overlay->parentWidget() == w)
+                m_overlay->resize(w->size());
         }
         return false;
     }
@@ -41,14 +40,14 @@ protected:
 
 int main(int argc, char *argv[])
 {
-    QApplication a{argc, argv};
-    Filter filter;
+    QApplication a(argc, argv);
+    OverlayFactoryFilter factory;
     QWidget window;
-    QHBoxLayout layout{&window};
+    QHBoxLayout layout(&window);
     for (auto text : { "Foo", "Bar", "Baz "}) {
         auto label = new QLabel{text};
         layout.addWidget(label);
-        label->installEventFilter(&filter);
+        label->installEventFilter(&factory);
     }
     window.setMinimumSize(300, 250);
     window.show();

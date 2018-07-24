@@ -4,11 +4,6 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 } else {
     QT = gui
     unix:QMAKE_CXXFLAGS += -std=c++11
-    macx {
-        QMAKE_CXXFLAGS += -stdlib=libc++
-        QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.7
-    }
+    macx:QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.9
 }
-TARGET = overlay-blur-19383427
-TEMPLATE = app
 SOURCES += main.cpp

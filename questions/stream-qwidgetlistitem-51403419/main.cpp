@@ -57,7 +57,7 @@ Layer &Layer::assignLayer(const Layer &o) {
    Q_ASSERT(o.type() == type());
    const QMetaType mt(typeId());
    Q_ASSERT(mt.isValid());
-   Layer::~Layer();
+   this->~Layer();
    mt.construct(this, &o);
    return *this;
 }

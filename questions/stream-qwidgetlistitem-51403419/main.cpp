@@ -2,39 +2,18 @@
 #include <QtWidgets>
 #include <QtTest>
 
-template <typename T> bool checkTypeEnum() {
-   auto const &en = QMetaEnum::fromType<T>();
-   for (int i = 0; i < en.keyCount(); i++)
-      if (QMetaType::type(en.key(i)) == QMetaType::UnknownType)
-         return false;
-   return true;
-}
-
-template <typename T> int typeIdToEnum(int typeId) {
-   auto const &en = QMetaEnum::fromType<T>();
-   return en.keyToValue(QMetaType::typeName(typeId));
-}
-
-template <typename T> int enumToTypeId(int enumVal) {
-   auto const &en = QMetaEnum::fromType<T>();
-   auto *name = en.valueToKey(enumVal);
-   return name ? QMetaType::type(name) : QMetaType::UnknownType;
-}
-
 //
 
 class Layer : public QListWidgetItem {
-   Q_GADGET
 public:
-   enum LayerType { // names must match type names
-      RasterLayer = QGraphicsItem::UserType+1,
-      VectorLayer
-   };
-   Q_ENUM(LayerType)
-
    virtual QGraphicsItem *it() = 0;
    const QGraphicsItem *it() const { return const_cast<Layer*>(this)->it(); }
-   int typeId() const { return enumToTypeId<LayerType>(type()); }
+   int typeId() const {
+      if (type() < UserType)
+         return QMetaType::UnknownType;
+      return type() - QListWidgetItem::UserType + QMetaType::User;
+   }
+   const char *typeName() const { return QMetaType::typeName(typeId()); }
    void write(QDataStream&) const override;
    void read(QDataStream&) override;
    QListWidgetItem *clone() const override final;
@@ -51,7 +30,7 @@ public:
    ~Layer() override = default;
 protected:
    using Format = quint8;
-   Layer(const QString &name, int type);
+   Layer(const QString &name, int typeId);
    static void invalidFormat(QDataStream &);
    template <typename T> T &assign(const T& o) { return static_cast<T&>(assignLayer(o)); }
 private:
@@ -61,10 +40,10 @@ private:
 
 //
 
-Layer::Layer(const Layer &o) : Layer(o.name(), o.type()) {}
+Layer::Layer(const Layer &o) : Layer(o.name(), o.typeId()) {}
 
-Layer::Layer(const QString &name, int type) :
-   QListWidgetItem(nullptr, type),
+Layer::Layer(const QString &name, int typeId) :
+   QListWidgetItem(nullptr, typeId - QMetaType::User + QListWidgetItem::UserType),
    m_name(name)
 {}
 
@@ -84,16 +63,17 @@ Layer &Layer::assignLayer(const Layer &o) {
 }
 
 void Layer::write(QDataStream &ds) const {
-   ds << (qint32)type() << (Format)0 << m_name << it()->pos();
+   ds << typeName() << (Format)0 << m_name << it()->pos();
    QListWidgetItem::write(ds);
 }
 
 void Layer::read(QDataStream &ds) {
-   qint32 type_;
+   QByteArray typeName_;
    Format format_;
    QPointF pos_;
-   ds >> type_ >> format_;
-   Q_ASSERT(type_ == type());
+   ds >> typeName_ >> format_;
+   if (typeName_.endsWith('\0')) typeName_.chop(1);
+   Q_ASSERT(typeName_ == typeName());
    if (format_ >= 0) {
       ds >> m_name >> pos_;
       setPos(pos_);
@@ -111,14 +91,23 @@ QDataStream &operator<<(QDataStream &ds, const Layer *l) {
    return ds << *l;
 }
 
+QByteArray peekByteArray(QDataStream &ds) {
+   qint32 size;
+   auto read = ds.device()->peek(reinterpret_cast<char*>(&size), sizeof(size));
+   if (read != sizeof(size))
+      return ds.setStatus(QDataStream::ReadPastEnd), QByteArray();
+   if (ds.byteOrder() == QDataStream::BigEndian)
+      size = qFromBigEndian(size);
+   auto buf = ds.device()->peek(size + 4);
+   if (buf.size() != size + 4)
+      return ds.setStatus(QDataStream::ReadPastEnd), QByteArray();
+   if (buf.endsWith('\0')) buf.chop(1);
+   return buf.mid(4);
+}
+
 QDataStream &operator>>(QDataStream &ds, Layer *&l) {
-   qint32 type = 0;
-   auto read = ds.device()->peek(reinterpret_cast<char*>(&type), sizeof(type));
-   if (read != sizeof(type)) {
-      ds.setStatus(QDataStream::ReadPastEnd);
-      return ds;
-   }
-   int typeId = enumToTypeId<Layer::LayerType>(qFromBigEndian(type));
+   auto typeName = peekByteArray(ds);
+   int typeId = QMetaType::type(typeName);
    QMetaType mt(typeId);
    l = mt.isValid() ? reinterpret_cast<Layer*>(mt.create()) : nullptr;
    if (l)
@@ -151,7 +140,7 @@ RasterLayer::RasterLayer(const RasterLayer &o) :
    QGraphicsPixmapItem(o.pixmap())
 {}
 
-RasterLayer::RasterLayer(const QString &name) : Layer(name, Layer::RasterLayer) {}
+RasterLayer::RasterLayer(const QString &name) : Layer(name, qMetaTypeId<RasterLayer>()) {}
 
 void RasterLayer::write(QDataStream &ds) const {
    Layer::write(ds);
@@ -194,7 +183,7 @@ VectorLayer::VectorLayer(const VectorLayer &o) :
    QGraphicsPathItem(o.path())
 {}
 
-VectorLayer::VectorLayer(const QString &name) : Layer(name, Layer::VectorLayer) {}
+VectorLayer::VectorLayer(const QString &name) : Layer(name, qMetaTypeId<VectorLayer>()) {}
 
 void VectorLayer::write(QDataStream &ds) const {
    Layer::write(ds);
@@ -224,10 +213,6 @@ class LayerTest : public QObject {
 private slots:
    void initTestCase() {
       buf.open(QIODevice::ReadWrite);
-   }
-
-   void testTypes() {
-      QVERIFY(checkTypeEnum<Layer::LayerType>());
    }
 
    void testClone() {
@@ -265,8 +250,8 @@ private slots:
       ds >> raster2 >> vector2;
 
       QVERIFY(raster2 && vector2);
-      QCOMPARE(raster2->type(), Layer::RasterLayer);
-      QCOMPARE(vector2->type(), Layer::VectorLayer);
+      QCOMPARE(raster2->typeId(), qMetaTypeId<RasterLayer>());
+      QCOMPARE(vector2->typeId(), qMetaTypeId<VectorLayer>());
       QCOMPARE(raster2->name(), raster.name());
       QCOMPARE(vector2->name(), vector.name());
       delete raster2;

@@ -1,44 +1,45 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/qgraphicsitem-stream-51492181
 // Interface
-#include <QGraphicsItem>
 #include <QDataStream>
+#include <QGraphicsItem>
+#include <QGraphicsTransform>
 #include <QMetaType>
 #include <type_traits>
 
-template <typename T, typename B> struct NonCopyableFunctionHelper {
+template <typename T> struct NonConstructibleFunctionHelper {
+   static void *Construct(void *, const void *) { return {}; }
    static void Destruct(void *t) { static_cast<T*>(t)->~T(); }
-   static void *Construct(void *where, const void *t) { return (!t) ? new (where) T : nullptr; }
    static void Save(QDataStream &ds, const void *t) { ds << *static_cast<const T*>(t); }
    static void Load(QDataStream &ds, void *t) { ds >> *static_cast<T*>(t); }
 };
 
+template <typename T> struct NonCopyableFunctionHelper : NonConstructibleFunctionHelper<T> {
+   static void *Construct(void *where, const void *t) { return (!t) ? new (where) T : nullptr; }
+};
+
 #define DECLARE_POLYMORPHIC_METATYPE(BASE_TYPE, TYPE) DECLARE_POLYMORPHIC_METATYPE_IMPL(BASE_TYPE, TYPE)
-#define DECLARE_POLYMORPHIC_METATYPE_IMPL(BASE_TYPE, TYPE)                 \
-   QT_BEGIN_NAMESPACE namespace QtMetaTypePrivate {                        \
-   template <> struct QMetaTypeFunctionHelper                              \
-   <typename std::enable_if<!std::is_copy_constructible<TYPE>::value, TYPE>::type, true> : \
-      NonCopyableFunctionHelper<TYPE, BASE_TYPE> {};                       \
-   QT_END_NAMESPACE }                                                      \
+#define DECLARE_POLYMORPHIC_METATYPE_IMPL(BASE_TYPE, TYPE)        \
+   QT_BEGIN_NAMESPACE namespace QtMetaTypePrivate {               \
+   template <> struct QMetaTypeFunctionHelper<TYPE> :             \
+      std::conditional<std::is_copy_constructible<TYPE>::value, void, \
+      std::conditional<std::is_default_constructible<TYPE>::value, NonCopyableFunctionHelper<TYPE>, \
+      NonConstructibleFunctionHelper<TYPE>                        \
+      >::type >::type {};                                         \
+   QT_END_NAMESPACE }                                             \
    Q_DECLARE_METATYPE_IMPL(TYPE)
-#define DECLARE_GRAPHICSITEM_METATYPE(TYPE)                    \
-   DECLARE_POLYMORPHIC_METATYPE_IMPL(QGraphicsItem, TYPE)      \
-   QDataStream &operator<<(QDataStream &, const TYPE &);       \
+#define DECLARE_POLYSTREAMING_METATYPE(BASE_TYPE, TYPE) DECLARE_POLYSTREAMING_METATYPE_IMPL(BASE_TYPE, TYPE)
+#define DECLARE_POLYSTREAMING_METATYPE_IMPL(BASE_TYPE, TYPE)      \
+   DECLARE_POLYMORPHIC_METATYPE_IMPL(BASE_TYPE, TYPE)             \
+   QDataStream &operator<<(QDataStream &, const TYPE &);          \
    QDataStream &operator>>(QDataStream &, TYPE &);
 
-QDataStream &operator<<(QDataStream &, const QGraphicsItem *);
-QDataStream &operator>>(QDataStream &, QGraphicsItem *&);
-QDataStream &operator<<(QDataStream &, const QGraphicsItem &);
-QDataStream &operator>>(QDataStream &, QGraphicsItem &);
-QDataStream &operator<<(QDataStream &, const QAbstractGraphicsShapeItem &);
-QDataStream &operator>>(QDataStream &, QAbstractGraphicsShapeItem &);
+#define DECLARE_GRAPHICSITEM_METATYPE(TYPE) DECLARE_POLYSTREAMING_METATYPE_IMPL(QGraphicsItem, TYPE)
 
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsLineItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsEllipseItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsSimpleTextItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsRectItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPolygonItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPathItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPixmapItem)
+void saveProperties(QDataStream &, const QObject *);
+void loadProperties(QDataStream &, QObject *);
+
+QDataStream &operator<<(QDataStream &, const QGraphicsTransform *);
+QDataStream &operator>>(QDataStream &, QGraphicsTransform *&);
 
 void registerMapping(int typeId, int itemType);
 
@@ -47,6 +48,21 @@ typename std::enable_if<std::is_base_of<QGraphicsItem, T>::value>::type register
    qRegisterMetaTypeStreamOperators<T>();
    registerMapping(qMetaTypeId<T>(), T::Type);
 }
+
+QDataStream &operator<<(QDataStream &, const QGraphicsItem *);
+QDataStream &operator>>(QDataStream &, QGraphicsItem *&);
+
+DECLARE_POLYMORPHIC_METATYPE(QGraphicsTransform, QGraphicsRotation)
+DECLARE_POLYMORPHIC_METATYPE(QGraphicsTransform, QGraphicsScale)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsItem)
+DECLARE_GRAPHICSITEM_METATYPE(QAbstractGraphicsShapeItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsLineItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsEllipseItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsSimpleTextItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsRectItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPolygonItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPathItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPixmapItem)
 
 class ItemStream {
    QDataStream &ds;
@@ -81,8 +97,11 @@ int main(int argc, char *argv[])
    layout.addWidget(&save, 1, 1);
 
    auto *eitem = scene.addEllipse(QRect(10, 10, 80, 50), QPen(Qt::green), QBrush(Qt::black));
+   auto *xform = new QGraphicsRotation;
+   xform->setAngle(10);
    eitem->setPos(100, 10);
    eitem->setRotation(60);
+   eitem->setTransformations({xform});
 
    auto *litem = scene.addLine(QLineF(0, 0, 100, 100), QPen(Qt::red));
    litem->setPos(10, 10);
@@ -138,7 +157,9 @@ int main(int argc, char *argv[])
 
 // Implementation Specializations
 
-static bool typeInit = []{
+static bool specInit = []{
+   qRegisterMetaType<QGraphicsRotation>();
+   qRegisterMetaType<QGraphicsScale>();
    registerMapping<QGraphicsLineItem>();
    registerMapping<QGraphicsEllipseItem>();
    registerMapping<QGraphicsSimpleTextItem>();
@@ -149,7 +170,7 @@ static bool typeInit = []{
    return true;
 }();
 
-QDataStream &operator<<(QDataStream &out, const QGraphicsEllipseItem &g){
+QDataStream &operator<<(QDataStream &out, const QGraphicsEllipseItem &g) {
    out << static_cast<const QAbstractGraphicsShapeItem &>(g);
    out << g.rect() << g.startAngle() << g.spanAngle();
    return out;
@@ -243,6 +264,43 @@ QDataStream &operator>>(QDataStream &in, QGraphicsPixmapItem &g) {
 
 // Implementation Core
 
+void saveProperties(QDataStream &ds, const QObject *obj) {
+   QVariantMap map;
+   auto const &mo = obj->metaObject();
+   for (int i = 0; i < mo->propertyCount(); ++i) {
+      auto const &mp = mo->property(i);
+      if (!mp.isStored(obj))
+         continue;
+      map.insert(QLatin1String(mp.name()), mp.read(obj));
+   }
+   for (auto &name : obj->dynamicPropertyNames())
+      map.insert(QLatin1String(name), obj->property(name));
+   ds << map;
+}
+
+void loadProperties(QDataStream &ds, QObject *obj) {
+   QVariantMap map;
+   ds >> map;
+   for (auto it = map.cbegin(); it != map.cend(); ++it)
+      obj->setProperty(it.key().toLatin1(), it.value());
+}
+
+QDataStream &operator<<(QDataStream &ds, const QGraphicsTransform *obj) {
+   ds << obj->metaObject()->className();
+   saveProperties(ds, obj);
+   return ds;
+}
+
+QDataStream &operator>>(QDataStream &ds, QGraphicsTransform *&obj) {
+   QByteArray className;
+   ds >> className;
+   auto const type = QMetaType::type(className);
+   obj = static_cast<QGraphicsTransform*>(QMetaType::create(type));
+   if (obj)
+      loadProperties(ds, obj);
+   return ds;
+}
+
 struct pair { int typeId; int itemType; };
 struct CoreData {
    QReadWriteLock mappingLock;
@@ -272,9 +330,9 @@ int getTypeIdForItemType(int itemType) {
 
 QDataStream &operator<<(QDataStream &ds, const QGraphicsItem *item) {
    int const typeId = getTypeIdForItemType(item->type());
-   if (typeId != QMetaType::UnknownType) {
+   if (typeId != QMetaType::UnknownType)
       QMetaType::save(ds, typeId, item);
-   } else
+   else
       ds << (int)0;
    return ds;
 }
@@ -300,12 +358,12 @@ QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
        << g.scale()
        << g.rotation()
        << g.transform()
-          //<< g.transformations()
+       << g.transformations()
        << g.transformOriginPoint()
        << g.flags()
        << g.isEnabled()
-       << g.isSelected();
-       //<< g.zValue();
+       << g.isSelected()
+       << g.zValue();
    return out;
 }
 
@@ -316,16 +374,16 @@ QDataStream &operator>>(QDataStream &in, QGraphicsItem &g) {
    in >> type;
    Q_ASSERT(g.type() == type);
    ItemStream iin(in, g);
-   iin >> &QGI::setPos
+   iin   >> &QGI::setPos
          >> &QGI::setScale
          >> &QGI::setRotation;
-   in >> transform;
-   iin //>> &QGI::setTransformations
+   in    >> transform;
+   iin   >> &QGI::setTransformations
          >> &QGI::setTransformOriginPoint
          >> &QGI::setFlags
          >> &QGI::setEnabled
-         >> &QGI::setSelected;
-         //>> &QGI::setZValue;
+         >> &QGI::setSelected
+         >> &QGI::setZValue;
    g.setTransform(transform);
    return in;
 }

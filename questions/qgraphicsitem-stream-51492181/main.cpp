@@ -14,11 +14,11 @@ template <typename T, typename B> struct NonCopyableFunctionHelper {
 
 #define DECLARE_POLYMORPHIC_METATYPE(BASE_TYPE, TYPE) DECLARE_POLYMORPHIC_METATYPE_IMPL(BASE_TYPE, TYPE)
 #define DECLARE_POLYMORPHIC_METATYPE_IMPL(BASE_TYPE, TYPE)                 \
-   QT_BEGIN_NAMESPACE                                                      \
-   template <> struct QtMetaTypePrivate::QMetaTypeFunctionHelper           \
+   QT_BEGIN_NAMESPACE namespace QtMetaTypePrivate {                        \
+   template <> struct QMetaTypeFunctionHelper                              \
    <typename std::enable_if<!std::is_copy_constructible<TYPE>::value, TYPE>::type, true> : \
-   NonCopyableFunctionHelper<TYPE, BASE_TYPE> {};                          \
-   QT_END_NAMESPACE                                                        \
+      NonCopyableFunctionHelper<TYPE, BASE_TYPE> {};                       \
+   QT_END_NAMESPACE }                                                      \
    Q_DECLARE_METATYPE_IMPL(TYPE)
 #define DECLARE_GRAPHICSITEM_METATYPE(TYPE)                    \
    DECLARE_POLYMORPHIC_METATYPE_IMPL(QGraphicsItem, TYPE)      \

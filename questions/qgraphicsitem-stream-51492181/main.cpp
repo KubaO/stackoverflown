@@ -5,6 +5,7 @@
 #include <QGraphicsTransform>
 #include <QMetaType>
 #include <type_traits>
+#include <algorithm>
 
 template <typename T> struct NonConstructibleFunctionHelper {
    static void *Construct(void *, const void *) { return {}; }
@@ -35,6 +36,8 @@ template <typename T> struct NonCopyableFunctionHelper : NonConstructibleFunctio
 
 #define DECLARE_GRAPHICSITEM_METATYPE(TYPE) DECLARE_POLYSTREAMING_METATYPE_IMPL(QGraphicsItem, TYPE)
 
+QDataStream &operator<<(QDataStream &, const QList<QGraphicsItem*> &);
+
 void saveProperties(QDataStream &, const QObject *);
 void loadProperties(QDataStream &, QObject *);
 
@@ -56,13 +59,15 @@ DECLARE_POLYMORPHIC_METATYPE(QGraphicsTransform, QGraphicsRotation)
 DECLARE_POLYMORPHIC_METATYPE(QGraphicsTransform, QGraphicsScale)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsItem)
 DECLARE_GRAPHICSITEM_METATYPE(QAbstractGraphicsShapeItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsItemGroup)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsLineItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsEllipseItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsSimpleTextItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsRectItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPolygonItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPathItem)
+//DECLARE_GRAPHICSITEM_METATYPE(QGraphicsObject)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPixmapItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsEllipseItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPathItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPolygonItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsRectItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsSimpleTextItem)
 
 class ItemStream {
    QDataStream &ds;
@@ -106,6 +111,8 @@ int main(int argc, char *argv[])
    auto *litem = scene.addLine(QLineF(0, 0, 100, 100), QPen(Qt::red));
    litem->setPos(10, 10);
    litem->setRotation(100);
+
+   scene.createItemGroup({eitem, litem});
 
    auto *ritem = scene.addRect(QRect(10, 0, 100, 100), QPen(Qt::blue), QBrush(Qt::red));
    ritem->setPos(10, 100);
@@ -160,13 +167,15 @@ int main(int argc, char *argv[])
 static bool specInit = []{
    qRegisterMetaType<QGraphicsRotation>();
    qRegisterMetaType<QGraphicsScale>();
+   registerMapping<QGraphicsItemGroup>();
    registerMapping<QGraphicsLineItem>();
-   registerMapping<QGraphicsEllipseItem>();
-   registerMapping<QGraphicsSimpleTextItem>();
-   registerMapping<QGraphicsRectItem>();
-   registerMapping<QGraphicsPolygonItem>();
-   registerMapping<QGraphicsPathItem>();
+   //registerMapping<QGraphicsObject>();
    registerMapping<QGraphicsPixmapItem>();
+   registerMapping<QGraphicsEllipseItem>();
+   registerMapping<QGraphicsPathItem>();
+   registerMapping<QGraphicsPolygonItem>();
+   registerMapping<QGraphicsRectItem>();
+   registerMapping<QGraphicsSimpleTextItem>();
    return true;
 }();
 
@@ -230,9 +239,17 @@ QDataStream &operator<<(QDataStream &out, const QGraphicsSimpleTextItem &g) {
 
 QDataStream &operator>>(QDataStream &in, QGraphicsSimpleTextItem &g) {
    using QGI = std::decay<decltype(g)>::type;
-   in >> static_cast<QAbstractGraphicsShapeItem&>(g);
+   in >> static_cast<QAbstractGraphicsShapeItem &>(g);
    ItemStream(in, g) >> &QGI::setText >> &QGI::setFont;
    return in;
+}
+
+QDataStream &operator<<(QDataStream &out, const QGraphicsItemGroup &g) {
+   return out << static_cast<const QGraphicsItem &>(g);
+}
+
+QDataStream &operator>>(QDataStream &in, QGraphicsItemGroup &g) {
+   return in >> static_cast<QGraphicsItem &>(g);
 }
 
 QDataStream &operator<<(QDataStream &out, const QGraphicsLineItem &g) {
@@ -263,6 +280,7 @@ QDataStream &operator>>(QDataStream &in, QGraphicsPixmapItem &g) {
 }
 
 // Implementation Core
+#include <set>
 
 void saveProperties(QDataStream &ds, const QObject *obj) {
    QVariantMap map;
@@ -328,6 +346,36 @@ int getTypeIdForItemType(int itemType) {
    return QMetaType::UnknownType;
 }
 
+QDataStream &operator<<(QDataStream &ds, const QList<QGraphicsItem*> &list) {
+   std::set<QGraphicsItem*> seen;
+   QList<QGraphicsItem*> items;
+   struct State { QList<QGraphicsItem*>::const_iterator it, end; };
+   QVector<State> stack;
+   stack.push_back({list.begin(), list.end()});
+   while (!stack.isEmpty()) {
+      auto &level = stack.back();
+      while (level.it != level.end) {
+         QGraphicsItem *item = *level.it++;
+         if (!item || seen.find(item) != seen.end())
+            continue; // skip empty items and seen items
+         if (stack.size() == 1) // push direct items only
+            items.push_back(item);
+         seen.insert(item);
+         const auto &children = item->childItems();
+         if (!children.isEmpty()) {
+            stack.push_back({children.begin(), children.end()});
+            break;
+         }
+      }
+      if (level.it == level.end)
+         stack.pop_back();
+   }
+   ds << quint32(items.size());
+   for (auto *item : items)
+      ds << item;
+   return ds;
+}
+
 QDataStream &operator<<(QDataStream &ds, const QGraphicsItem *item) {
    int const typeId = getTypeIdForItemType(item->type());
    if (typeId != QMetaType::UnknownType)
@@ -363,7 +411,8 @@ QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
        << g.flags()
        << g.isEnabled()
        << g.isSelected()
-       << g.zValue();
+       << g.zValue()
+       << g.childItems();
    return out;
 }
 
@@ -371,6 +420,8 @@ QDataStream &operator>>(QDataStream &in, QGraphicsItem &g) {
    using QGI = std::decay<decltype(g)>::type;
    int type;
    QTransform transform;
+   QList<QGraphicsItem*> children;
+
    in >> type;
    Q_ASSERT(g.type() == type);
    ItemStream iin(in, g);
@@ -378,13 +429,16 @@ QDataStream &operator>>(QDataStream &in, QGraphicsItem &g) {
          >> &QGI::setScale
          >> &QGI::setRotation;
    in    >> transform;
+   g.setTransform(transform);
    iin   >> &QGI::setTransformations
          >> &QGI::setTransformOriginPoint
          >> &QGI::setFlags
          >> &QGI::setEnabled
          >> &QGI::setSelected
          >> &QGI::setZValue;
-   g.setTransform(transform);
+   in    >> children;
+   for (auto *c : qAsConst(children))
+      c->setParentItem(&g);
    return in;
 }
 

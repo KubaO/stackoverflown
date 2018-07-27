@@ -1,6 +1,6 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/local-pipe-32317081
 // This project is compatible with Qt 4 and Qt 5
-#include <QtTest>
+#include <QtCore>
 #include <private/qiodevice_p.h>
 #include <private/qringbuffer_p.h>
 #include <algorithm>
@@ -139,6 +139,8 @@ public:
 #endif
 };
 
+#include <QtTest>
+
 class TestAppPipe : public QObject {
    Q_OBJECT
    QByteArray data1, data2;
@@ -151,10 +153,10 @@ class TestAppPipe : public QObject {
       data1 = randomData();
       data2 = randomData();
    }
-   Q_SLOT void sizes() {
+   Q_SLOT void hasQIODeviceSize() {
       QCOMPARE(sizeof(AppPipe), sizeof(QIODevice));
    }
-   Q_SLOT void basic() {
+   Q_SLOT void transfersBasicData() {
       PipePair p;
       QVERIFY(p.end1.isOpen() && p.end1.isWritable() && p.end1.isReadable());
       QVERIFY(p.end2.isOpen() && p.end2.isWritable() && p.end2.isReadable());
@@ -189,11 +191,11 @@ class TestAppPipe : public QObject {
       QCOMPARE(p.end1.readAll(), data2);
       QCOMPARE(p.end2.readAll(), data1);
    }
-   Q_SLOT void bigDataBuffered() {
+   Q_SLOT void transfersBigDataBuffered() {
       PipePair p;
       runBigData(p);
    }
-   Q_SLOT void bigDataUnbuffered() {
+   Q_SLOT void transfersBigDataUnbuffered() {
       PipePair p(QIODevice::Unbuffered);
       runBigData(p);
    }
@@ -203,5 +205,4 @@ class TestAppPipe : public QObject {
 };
 
 QTEST_MAIN(TestAppPipe)
-
 #include "main.moc"

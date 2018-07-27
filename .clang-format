@@ -1,0 +1,18 @@
+BasedOnStyle: Google
+ColumnLimit: 90
+IndentWidth: 3
+IncludeCategories:
+  - Regex:    '^<private/.+\.h>'
+    Priority: 0
+  - Regex:    '^<Q[A-Z][a-zA-Z0-9].+>'
+    Priority: 1
+  - Regex:    '^<[a-zA-Z0-9]+/.+\.h(pp|)>'
+    Priority: 2
+  - Regex:    '^<ext/.*\.h>'
+    Priority: 4
+  - Regex:    '^<.*\.h>'
+    Priority: 3
+  - Regex:    '^<.*'
+    Priority: 4
+  - Regex:    '.*'
+    Priority: 5

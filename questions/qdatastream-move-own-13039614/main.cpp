@@ -2,7 +2,6 @@
 #include <QDataStream>
 
 class DataStream : public QDataStream {
-   friend class DataStreamTest;
    struct Proxy {
       QScopedPointer<QDataStreamPrivate> d;
       QIODevice *dev;
@@ -15,15 +14,18 @@ class DataStream : public QDataStream {
       virtual ~Proxy();
 #endif
    };
-   Proxy *p() { return reinterpret_cast<Proxy*>(this); }
-   const Proxy *p() const { return reinterpret_cast<const Proxy*>(this); }
+   static Proxy *p(QDataStream *ds)  { return reinterpret_cast<Proxy*>(ds); }
+   static const Proxy *p(const QDataStream *ds)  { return reinterpret_cast<const Proxy*>(ds); }
+#if defined(QT_TESTLIB_LIB) || defined(QT_MODULE_TEST)
+   friend class DataStreamTest;
+#endif
 public:
    using QDataStream::QDataStream;
    DataStream(DataStream &&other) : DataStream(static_cast<QDataStream&&>(other)) {}
    DataStream(QDataStream &&other) {
       using std::swap;
-      Proxy &o = *reinterpret_cast<Proxy*>(&other);
-      Proxy &t = *p();
+      Proxy &o = *p(&other);
+      Proxy &t = *p(this);
       swap(t.d, o.d);
       swap(t.dev, o.dev);
       swap(t.owndev, o.owndev);
@@ -40,12 +42,10 @@ public:
    }
    void setOwnedDevice(QIODevice *dev) {
       setDevice(dev);
-      p()->owndev = true;
+      p(this)->owndev = true;
    }
-   bool ownsDevice() const { return p()->owndev; }
-   static bool ownsDevice(const QDataStream *ds) {
-      return reinterpret_cast<const Proxy*>(ds)->owndev;
-   }
+   bool ownsDevice() const { return p(this)->owndev; }
+   static bool ownsDevice(const QDataStream *ds) { return p(ds)->owndev; }
 };
 
 #include <QtTest>
@@ -61,9 +61,47 @@ class DataStreamTest : public QObject {
    template <typename T, typename... Args> DataStream make_stream(Args &&...args) {
       return T(std::forward<Args>(args)...);
    }
+   static QDataStream::ByteOrder flipped(QDataStream::ByteOrder o) {
+      return (o == QDataStream::BigEndian) ? QDataStream::LittleEndian : QDataStream::BigEndian;
+   }
    Q_SLOT void isBinaryCompatible() {
       QCOMPARE(sizeof(DataStream), sizeof(QDataStream));
       QCOMPARE(sizeof(DataStream::Proxy), sizeof(QDataStream));
+      struct Test {
+         QByteArray data;
+         QDataStream ds{&data, QIODevice::ReadWrite};
+         void check(int loc = 0) {
+            if (!loc) {
+               check(1);
+               ds.setDevice(0);
+               check(1);
+            }
+            QCOMPARE(!!ds.device(), DataStream::ownsDevice(&ds));
+            QCOMPARE(ds.device(), DataStream::p(&ds)->dev);
+
+            if (!loc) check(2);
+            bool noswap = DataStream::p(&ds)->noswap;
+            QCOMPARE(noswap, DataStream::p(&ds)->noswap);
+            QCOMPARE(ds.byteOrder(), DataStream::p(&ds)->byteorder);
+            if (loc != 2) {
+               ds.setByteOrder(flipped(ds.byteOrder()));
+               noswap = !noswap;
+            }
+            if (!loc) check(2);
+            QCOMPARE(noswap, DataStream::p(&ds)->noswap);
+
+            if (!loc) check(3);
+            QCOMPARE(ds.version(), DataStream::p(&ds)->ver);
+            if (loc != 3) ds.setVersion(QDataStream::Qt_4_0);
+            if (!loc) check(3);
+
+            if (!loc) check(4);
+            QCOMPARE(ds.status(), DataStream::p(&ds)->q_status);
+            if (loc != 4) ds.setStatus(QDataStream::ReadPastEnd);
+            if (!loc) check(4);
+         }
+      } test;
+      test.check();
    }
    Q_SLOT void streams() {
       QString str{"Hello, world"};

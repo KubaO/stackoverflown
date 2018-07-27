@@ -1,8 +1,8 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/local-pipe-32317081
 // This project is compatible with Qt 4 and Qt 5
-#include <QtCore>
 #include <private/qiodevice_p.h>
 #include <private/qringbuffer_p.h>
+#include <QtCore>
 #include <algorithm>
 #include <climits>
 
@@ -11,8 +11,8 @@
 #endif
 
 class AppPipePrivate : public QIODevicePrivate {
-public:
-#if QT_VERSION < QT_VERSION_CHECK(5,7,0)
+  public:
+#if QT_VERSION < QT_VERSION_CHECK(5, 7, 0)
    QRingBuffer buffer;
    QRingBuffer writeBuffer;
    int writeBufferChunkSize;
@@ -29,8 +29,8 @@ class AppPipe : public QIODevice {
    static inline int intLen(qint64 len) { return std::min(len, qint64(INT_MAX)); }
    Q_SLOT void _a_write(const QByteArray &data) {
       Q_D(AppPipe);
-      if (!(d->openMode & QIODevice::ReadOnly)) return; // We must be readable.
-      d->buffer.append(data); // This is a chunk shipped from the source.
+      if (!(d->openMode & QIODevice::ReadOnly)) return;  // We must be readable.
+      d->buffer.append(data);  // This is a chunk shipped from the source.
       emit hasIncoming(data);
       emit readyRead();
    }
@@ -42,30 +42,34 @@ class AppPipe : public QIODevice {
          len -= size;
       }
    }
-public:
-   AppPipe(QIODevice::OpenMode mode, QObject *parent = 0) :
-      QIODevice(*new AppPipePrivate, parent) {
+
+  public:
+   AppPipe(QIODevice::OpenMode mode, QObject *parent = 0)
+       : QIODevice(*new AppPipePrivate, parent) {
       open(mode);
    }
-   AppPipe(AppPipe *other, QIODevice::OpenMode mode, QObject *parent = 0) :
-      QIODevice(*new AppPipePrivate, parent) {
+   AppPipe(AppPipe *other, QIODevice::OpenMode mode, QObject *parent = 0)
+       : QIODevice(*new AppPipePrivate, parent) {
       open(mode);
       addOther(other);
    }
-   AppPipe(AppPipe *other, QObject *parent = 0) :
-      QIODevice(*new AppPipePrivate, parent) {
+   AppPipe(AppPipe *other, QObject *parent = 0) : QIODevice(*new AppPipePrivate, parent) {
       addOther(other);
    }
    ~AppPipe() Q_DECL_OVERRIDE {}
    void addOther(AppPipe *other) {
       if (other) {
-         connect(this, SIGNAL(hasOutgoing(QByteArray)), other, SLOT(_a_write(QByteArray)), Qt::UniqueConnection);
-         connect(other, SIGNAL(hasOutgoing(QByteArray)), this, SLOT(_a_write(QByteArray)), Qt::UniqueConnection);
+         connect(this, SIGNAL(hasOutgoing(QByteArray)), other, SLOT(_a_write(QByteArray)),
+                 Qt::UniqueConnection);
+         connect(other, SIGNAL(hasOutgoing(QByteArray)), this, SLOT(_a_write(QByteArray)),
+                 Qt::UniqueConnection);
       }
    }
    void removeOther(AppPipe *other) {
-      disconnect(this, SIGNAL(hasOutgoing(QByteArray)), other, SLOT(_a_write(QByteArray)));
-      disconnect(other, SIGNAL(hasOutgoing(QByteArray)), this, SLOT(_a_write(QByteArray)));
+      disconnect(this, SIGNAL(hasOutgoing(QByteArray)), other,
+                 SLOT(_a_write(QByteArray)));
+      disconnect(other, SIGNAL(hasOutgoing(QByteArray)), this,
+                 SLOT(_a_write(QByteArray)));
    }
    void flush() {
       Q_D(AppPipe);
@@ -81,35 +85,31 @@ public:
       QIODevice::close();
       d->buffer.clear();
    }
-   qint64 write(const QByteArray &data) { // This is an optional optimization. The base method works OK.
+   qint64 write(const QByteArray &data) {  // This is an optional optimization. The base
+                                           // method works OK.
       Q_D(AppPipe);
-      QScopedValueRollback<const QByteArray*> back(d->writeData);
-      if (!(d->openMode & Text))
-         d->writeData = &data;
+      QScopedValueRollback<const QByteArray *> back(d->writeData);
+      if (!(d->openMode & Text)) d->writeData = &data;
       return QIODevice::write(data);
    }
    qint64 writeData(const char *data, qint64 len) Q_DECL_OVERRIDE {
       Q_D(AppPipe);
       bool buffered = !(d->openMode & Unbuffered);
-      if (buffered && (d->writeBuffer.size() + len) > d->writeBufferChunkSize)
-         flush();
-      if (!buffered
-          || len > d->writeBufferChunkSize
-          || (len == d->writeBufferChunkSize && d->writeBuffer.isEmpty()))
-      {
+      if (buffered && (d->writeBuffer.size() + len) > d->writeBufferChunkSize) flush();
+      if (!buffered || len > d->writeBufferChunkSize ||
+          (len == d->writeBufferChunkSize && d->writeBuffer.isEmpty())) {
          if (d->writeData && d->writeData->data() == data && d->writeData->size() == len)
             emit hasOutgoing(*d->writeData);
          else
             hasOutgoingLong(data, len);
-      }
-      else
+      } else
          memcpy(d->writeBuffer.reserve(len), data, len);
       return len;
    }
    bool isSequential() const Q_DECL_OVERRIDE { return true; }
    Q_SIGNAL void hasOutgoing(const QByteArray &);
    Q_SIGNAL void hasIncoming(const QByteArray &);
-#if QT_VERSION >= QT_VERSION_CHECK(5,7,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
    // all the data is in the read buffer already
    qint64 readData(char *, qint64) Q_DECL_OVERRIDE { return 0; }
 #else
@@ -146,16 +146,14 @@ class TestAppPipe : public QObject {
    QByteArray data1, data2;
    struct PipePair {
       AppPipe end1, end2;
-      PipePair(QIODevice::OpenMode mode = QIODevice::NotOpen) :
-         end1(QIODevice::ReadWrite | mode), end2(&end1, QIODevice::ReadWrite | mode) {}
+      PipePair(QIODevice::OpenMode mode = QIODevice::NotOpen)
+          : end1(QIODevice::ReadWrite | mode), end2(&end1, QIODevice::ReadWrite | mode) {}
    };
    Q_SLOT void initTestCase() {
       data1 = randomData();
       data2 = randomData();
    }
-   Q_SLOT void hasQIODeviceSize() {
-      QCOMPARE(sizeof(AppPipe), sizeof(QIODevice));
-   }
+   Q_SLOT void hasQIODeviceSize() { QCOMPARE(sizeof(AppPipe), sizeof(QIODevice)); }
    Q_SLOT void transfersBasicData() {
       PipePair p;
       QVERIFY(p.end1.isOpen() && p.end1.isWritable() && p.end1.isReadable());
@@ -165,20 +163,20 @@ class TestAppPipe : public QObject {
       p.end1.flush();
       QCOMPARE(p.end2.readAll(), QByteArray(hello));
    }
-   static QByteArray randomData(int const size = 1024*1024*32) {
+   static QByteArray randomData(int const size = 1024 * 1024 * 32) {
       QByteArray data;
       data.resize(size);
       char *const d = data.data();
-      for (char *p = d+data.size()-1; p >= d; --p)
-         *p = qrand();
+      for (char *p = d + data.size() - 1; p >= d; --p) *p = qrand();
       Q_ASSERT(data.size() == size);
       return data;
    }
    static void randomChunkWrite(AppPipe *dev, const QByteArray &payload) {
-      for (int written = 0, left = payload.size(); left; ) {
+      for (int written = 0, left = payload.size(); left;) {
          int const chunk = std::min(qrand() % 82931, left);
          dev->write(payload.mid(written, chunk));
-         left -= chunk; written += chunk;
+         left -= chunk;
+         written += chunk;
       }
       dev->flush();
    }
@@ -200,7 +198,8 @@ class TestAppPipe : public QObject {
       runBigData(p);
    }
    Q_SLOT void cleanupTestCase() {
-      data1.clear(); data2.clear();
+      data1.clear();
+      data2.clear();
    }
 };
 

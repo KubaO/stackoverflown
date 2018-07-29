@@ -32,7 +32,7 @@ void setSelect(QSet<T> &set, bool b, const U &val) {
 
 bool hasParent(QObject *obj, QObject *const parent) {
    Q_ASSERT(obj);
-   while (obj = obj->parent())
+   while ((obj = obj->parent()))
       if (obj == parent) return true;
    return obj == parent;
 }
@@ -83,7 +83,7 @@ public:
    void addPoly(QWidget *w, QValidator *v) {
       addPoly(qobject_cast<QLineEdit*>(w), v) ||
             addPoly(qobject_cast<QComboBox*>(w), v) ||
-            (add(w, v), true);
+            (static_cast<void>(add(w, v)), true);
    }
    void add(QComboBox *b, QValidator *v) {
       if (auto *l = b->lineEdit())

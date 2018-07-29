@@ -1,4 +1,3 @@
-# local-pipe-32317081.pro
 QT = gui
 greaterThan(QT_MAJOR_VERSION, 4): QT = widgets
 else: QMAKE_CXXFLAGS += -std=c++11

@@ -148,6 +148,10 @@ int main(int argc, char *argv[])
 
    scene.addPixmap(makePixmap());
 
+   auto *stitem = scene.addSimpleText("Simple Text", {"arial", 17});
+   stitem->setPos(-50,-10);
+   stitem->setPen(QPen(Qt::darkGreen));
+
    auto const flags = QGraphicsItem::ItemIsMovable
          | QGraphicsItem::ItemIsSelectable
          | QGraphicsItem::ItemIsFocusable;

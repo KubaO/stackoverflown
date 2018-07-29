@@ -10,19 +10,21 @@ class DataStream : public QDataStream {
       QDataStream::ByteOrder byteorder;
       int ver;
       QDataStream::Status q_status;
-#if QT_VERSION < QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
       virtual ~Proxy();
 #endif
    };
-   static Proxy *p(QDataStream *ds)  { return reinterpret_cast<Proxy*>(ds); }
-   static const Proxy *p(const QDataStream *ds)  { return reinterpret_cast<const Proxy*>(ds); }
+   static Proxy *p(QDataStream *ds) { return reinterpret_cast<Proxy *>(ds); }
+   static const Proxy *p(const QDataStream *ds) {
+      return reinterpret_cast<const Proxy *>(ds);
+   }
 #if defined(QT_TESTLIB_LIB) || defined(QT_MODULE_TEST)
    friend class DataStreamTest;
 #endif
-public:
+  public:
    DataStream() = default;
    using QDataStream::QDataStream;
-   DataStream(DataStream &&other) : DataStream(static_cast<QDataStream&&>(other)) {}
+   DataStream(DataStream &&other) : DataStream(static_cast<QDataStream &&>(other)) {}
    DataStream(QDataStream &&other) {
       using std::swap;
       Proxy &o = *p(&other);
@@ -35,7 +37,9 @@ public:
       swap(t.ver, o.ver);
       swap(t.q_status, o.q_status);
    }
-   DataStream &operator=(DataStream &&other) { return *this=static_cast<QDataStream&&>(other); }
+   DataStream &operator=(DataStream &&other) {
+      return *this = static_cast<QDataStream &&>(other);
+   }
    DataStream &operator=(QDataStream &&other) {
       this->~DataStream();
       new (this) DataStream(std::move(other));
@@ -54,16 +58,16 @@ public:
 class DataStreamTest : public QObject {
    Q_OBJECT
    static QObjectData *getD(QObject *obj) {
-      return static_cast<DataStreamTest*>(obj)->d_ptr.data();
+      return static_cast<DataStreamTest *>(obj)->d_ptr.data();
    }
-   static bool wasDeleted(QObject *obj) {
-      return getD(obj)->wasDeleted;
-   }
-   template <typename T, typename... Args> DataStream make_stream(Args &&...args) {
+   static bool wasDeleted(QObject *obj) { return getD(obj)->wasDeleted; }
+   template <typename T, typename... Args>
+   DataStream make_stream(Args &&... args) {
       return T(std::forward<Args>(args)...);
    }
    static QDataStream::ByteOrder flipped(QDataStream::ByteOrder o) {
-      return (o == QDataStream::BigEndian) ? QDataStream::LittleEndian : QDataStream::BigEndian;
+      return (o == QDataStream::BigEndian) ? QDataStream::LittleEndian
+                                           : QDataStream::BigEndian;
    }
    Q_SLOT void isBinaryCompatible() {
       QCOMPARE(sizeof(DataStream), sizeof(QDataStream));

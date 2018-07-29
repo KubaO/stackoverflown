@@ -38,7 +38,7 @@ template <typename T> struct NonCopyableFunctionHelper : NonConstructibleFunctio
 
 QDataStream &operator<<(QDataStream &, const QList<QGraphicsItem*> &);
 
-void saveProperties(QDataStream &, const QObject *);
+void saveProperties(QDataStream &, const QObject *, const QByteArrayList &excluded = {});
 void loadProperties(QDataStream &, QObject *);
 
 QDataStream &operator<<(QDataStream &, const QGraphicsTransform *);
@@ -302,17 +302,22 @@ QDataStream &operator>>(QDataStream &in, QGraphicsPixmapItem &g) {
 // Implementation Core
 #include <set>
 
-void saveProperties(QDataStream &ds, const QObject *obj) {
+void saveProperties(QDataStream &ds, const QObject *obj, const QByteArrayList &excluded) {
    QVariantMap map;
    auto const &mo = obj->metaObject();
    for (int i = 0; i < mo->propertyCount(); ++i) {
       auto const &mp = mo->property(i);
       if (!mp.isStored(obj))
          continue;
-      map.insert(QLatin1String(mp.name()), mp.read(obj));
+      if (!excluded.contains(mp.name())) {
+         auto prop = mp.read(obj);
+         if (!prop.isNull())
+            map.insert(QLatin1String(mp.name()), prop);
+      }
    }
    for (auto &name : obj->dynamicPropertyNames())
       map.insert(QLatin1String(name), obj->property(name));
+   qDebug() << map;
    ds << map;
 }
 

@@ -4,17 +4,16 @@
 //
 
 class Layer : public QListWidgetItem {
-public:
+  public:
    virtual QGraphicsItem *it() = 0;
-   const QGraphicsItem *it() const { return const_cast<Layer*>(this)->it(); }
+   const QGraphicsItem *it() const { return const_cast<Layer *>(this)->it(); }
    int typeId() const {
-      if (type() < UserType)
-         return QMetaType::UnknownType;
+      if (type() < UserType) return QMetaType::UnknownType;
       return type() - QListWidgetItem::UserType + QMetaType::User;
    }
    const char *typeName() const { return QMetaType::typeName(typeId()); }
-   void write(QDataStream&) const override;
-   void read(QDataStream&) override;
+   void write(QDataStream &) const override;
+   void read(QDataStream &) override;
    QListWidgetItem *clone() const override final;
 
    void setZValue(int z) { it()->setZValue(z); }
@@ -27,29 +26,33 @@ public:
    QString name() const { return m_name; }
    void setName(const QString &n) { m_name = n; }
    ~Layer() override = default;
-protected:
+
+  protected:
    using Format = qint8;
    Layer(const QString &name, int typeId);
    static void invalidFormat(QDataStream &);
-   template <typename T> T &assign(const T& o) { return static_cast<T&>(assignLayer(o)); }
-private:
+   template <typename T>
+   T &assign(const T &o) {
+      return static_cast<T &>(assignLayer(o));
+   }
+
+  private:
    QString m_name;
-   Layer& assignLayer(const Layer &);
+   Layer &assignLayer(const Layer &);
 };
 
 //
 
 Layer::Layer(const Layer &o) : Layer(o.name(), o.typeId()) {}
 
-Layer::Layer(const QString &name, int typeId) :
-   QListWidgetItem(nullptr, typeId - QMetaType::User + QListWidgetItem::UserType),
-   m_name(name)
-{}
+Layer::Layer(const QString &name, int typeId)
+    : QListWidgetItem(nullptr, typeId - QMetaType::User + QListWidgetItem::UserType),
+      m_name(name) {}
 
 QListWidgetItem *Layer::clone() const {
    const QMetaType mt(typeId());
    Q_ASSERT(mt.isValid());
-   return reinterpret_cast<QListWidgetItem*>(mt.create(this));
+   return reinterpret_cast<QListWidgetItem *>(mt.create(this));
 }
 
 Layer &Layer::assignLayer(const Layer &o) {
@@ -78,27 +81,21 @@ void Layer::read(QDataStream &ds) {
       setPos(pos_);
       QListWidgetItem::read(ds);
    }
-   if (format_ >= 1)
-      invalidFormat(ds);
+   if (format_ >= 1) invalidFormat(ds);
 }
 
-void Layer::invalidFormat(QDataStream &ds) {
-   ds.setStatus(QDataStream::ReadCorruptData);
-}
+void Layer::invalidFormat(QDataStream &ds) { ds.setStatus(QDataStream::ReadCorruptData); }
 
-QDataStream &operator<<(QDataStream &ds, const Layer *l) {
-   return ds << *l;
-}
+QDataStream &operator<<(QDataStream &ds, const Layer *l) { return ds << *l; }
 
 QByteArray peekByteArray(QDataStream &ds) {
    qint32 size;
-   auto read = ds.device()->peek(reinterpret_cast<char*>(&size), sizeof(size));
+   auto read = ds.device()->peek(reinterpret_cast<char *>(&size), sizeof(size));
    if (read != sizeof(size)) {
       ds.setStatus(QDataStream::ReadPastEnd);
       return {};
    }
-   if (ds.byteOrder() == QDataStream::BigEndian)
-      size = qFromBigEndian(size);
+   if (ds.byteOrder() == QDataStream::BigEndian) size = qFromBigEndian(size);
    auto buf = ds.device()->peek(size + 4);
    if (buf.size() != size + 4) {
       ds.setStatus(QDataStream::ReadPastEnd);
@@ -112,7 +109,7 @@ QDataStream &operator>>(QDataStream &ds, Layer *&l) {
    auto typeName = peekByteArray(ds);
    int typeId = QMetaType::type(typeName);
    QMetaType mt(typeId);
-   l = mt.isValid() ? reinterpret_cast<Layer*>(mt.create()) : nullptr;
+   l = mt.isValid() ? reinterpret_cast<Layer *>(mt.create()) : nullptr;
    if (l)
       ds >> *l;
    else
@@ -123,7 +120,7 @@ QDataStream &operator>>(QDataStream &ds, Layer *&l) {
 //
 
 class RasterLayer : public Layer, public QGraphicsPixmapItem {
-public:
+  public:
    QGraphicsItem *it() override { return this; }
    int type() const override { return Layer::type(); }
    RasterLayer &operator=(const RasterLayer &o) { return assign(o); }
@@ -138,10 +135,8 @@ Q_DECLARE_METATYPE(RasterLayer)
 
 static int rasterOps = qRegisterMetaTypeStreamOperators<RasterLayer>();
 
-RasterLayer::RasterLayer(const RasterLayer &o) :
-   Layer(o),
-   QGraphicsPixmapItem(o.pixmap())
-{}
+RasterLayer::RasterLayer(const RasterLayer &o)
+    : Layer(o), QGraphicsPixmapItem(o.pixmap()) {}
 
 RasterLayer::RasterLayer(const QString &name) : Layer(name, qMetaTypeId<RasterLayer>()) {}
 
@@ -159,14 +154,13 @@ void RasterLayer::read(QDataStream &ds) {
       ds >> pix_;
       setPixmap(pix_);
    }
-   if (format_ >= 1)
-      invalidFormat(ds);
+   if (format_ >= 1) invalidFormat(ds);
 }
 
 //
 
 class VectorLayer : public Layer, public QGraphicsPathItem {
-public:
+  public:
    QGraphicsItem *it() override { return this; }
    int type() const override { return Layer::type(); }
    VectorLayer &operator=(const VectorLayer &o) { return assign(o); }
@@ -181,10 +175,7 @@ Q_DECLARE_METATYPE(VectorLayer)
 
 static int vectorOps = qRegisterMetaTypeStreamOperators<VectorLayer>();
 
-VectorLayer::VectorLayer(const VectorLayer &o) :
-   Layer(o),
-   QGraphicsPathItem(o.path())
-{}
+VectorLayer::VectorLayer(const VectorLayer &o) : Layer(o), QGraphicsPathItem(o.path()) {}
 
 VectorLayer::VectorLayer(const QString &name) : Layer(name, qMetaTypeId<VectorLayer>()) {}
 
@@ -202,8 +193,7 @@ void VectorLayer::read(QDataStream &ds) {
       ds >> path_;
       setPath(path_);
    }
-   if (format_ >= 1)
-      invalidFormat(ds);
+   if (format_ >= 1) invalidFormat(ds);
 }
 
 //
@@ -215,15 +205,13 @@ class LayerTest : public QObject {
    QBuffer buf;
    QDataStream ds{&buf};
 
-private slots:
-   void initTestCase() {
-      buf.open(QIODevice::ReadWrite);
-   }
+  private slots:
+   void initTestCase() { buf.open(QIODevice::ReadWrite); }
 
    void testClone() {
       RasterLayer raster("foo");
       QScopedPointer<QListWidgetItem> clone(raster.clone());
-      auto *raster2 = static_cast<RasterLayer*>(clone.data());
+      auto *raster2 = static_cast<RasterLayer *>(clone.data());
 
       QCOMPARE(raster2->type(), raster.type());
       QCOMPARE(raster2->name(), raster.name());
@@ -283,7 +271,7 @@ private slots:
       ds.device()->reset();
       RasterLayer raster;
       VectorLayer vector;
-      QList<Layer*> layers;
+      QList<Layer *> layers;
       layers << &raster << &vector;
       ds << layers;
 
@@ -317,8 +305,7 @@ private slots:
    void testVariantContainerIO() {
       ds.device()->reset();
       QVariantList layers;
-      layers << QVariant::fromValue(RasterLayer())
-             << QVariant::fromValue(VectorLayer());
+      layers << QVariant::fromValue(RasterLayer()) << QVariant::fromValue(VectorLayer());
       ds << layers;
 
       ds.device()->reset();

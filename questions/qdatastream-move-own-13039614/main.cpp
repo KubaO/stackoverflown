@@ -20,6 +20,7 @@ class DataStream : public QDataStream {
    friend class DataStreamTest;
 #endif
 public:
+   DataStream() = default;
    using QDataStream::QDataStream;
    DataStream(DataStream &&other) : DataStream(static_cast<QDataStream&&>(other)) {}
    DataStream(QDataStream &&other) {
@@ -73,7 +74,7 @@ class DataStreamTest : public QObject {
          void check(int loc = 0) {
             if (!loc) {
                check(1);
-               ds.setDevice(0);
+               ds.setDevice(nullptr);
                check(1);
             }
             QCOMPARE(!!ds.device(), DataStream::ownsDevice(&ds));

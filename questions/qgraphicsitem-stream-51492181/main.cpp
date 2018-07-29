@@ -98,6 +98,16 @@ public:
 // Test
 #include <QtWidgets>
 
+QPixmap makePixmap() {
+   QPixmap pix(100, 50);
+   pix.fill(Qt::transparent);
+   QPainter p(&pix);
+   p.setPen(Qt::darkCyan);
+   p.setFont({"helvetica,arial", 15});
+   p.drawText(pix.rect(), Qt::AlignCenter, "Hello!");
+   return pix;
+}
+
 int main(int argc, char *argv[])
 {
    QApplication a(argc, argv);
@@ -136,7 +146,7 @@ int main(int argc, char *argv[])
    pitem->setPos(100, 22);
    pitem->setRotation(120);
 
-   scene.addPixmap(QPixmap(":/image.png"));
+   scene.addPixmap(makePixmap());
 
    auto const flags = QGraphicsItem::ItemIsMovable
          | QGraphicsItem::ItemIsSelectable

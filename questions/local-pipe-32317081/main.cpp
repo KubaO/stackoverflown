@@ -26,7 +26,7 @@ class AppPipePrivate : public QIODevicePrivate {
 class AppPipe : public QIODevice {
    Q_OBJECT
    Q_DECLARE_PRIVATE(AppPipe)
-   static inline int intLen(qint64 len) { return std::min(len, qint64(INT_MAX)); }
+   static inline int intLen(qint64 len) { return int(std::min(len, qint64(INT_MAX))); }
    Q_SLOT void _a_write(const QByteArray &data) {
       Q_D(AppPipe);
       if (!(d->openMode & QIODevice::ReadOnly)) return;  // We must be readable.
@@ -103,7 +103,7 @@ class AppPipe : public QIODevice {
          else
             hasOutgoingLong(data, len);
       } else
-         memcpy(d->writeBuffer.reserve(len), data, len);
+         std::copy(data, data + len, d->writeBuffer.reserve(len));
       return len;
    }
    bool isSequential() const Q_DECL_OVERRIDE { return true; }
@@ -158,16 +158,16 @@ class TestAppPipe : public QObject {
       PipePair p;
       QVERIFY(p.end1.isOpen() && p.end1.isWritable() && p.end1.isReadable());
       QVERIFY(p.end2.isOpen() && p.end2.isWritable() && p.end2.isReadable());
-      static const char hello[] = "Hello There!";
+      const QByteArray hello("Hello There!");
       p.end1.write(hello);
       p.end1.flush();
-      QCOMPARE(p.end2.readAll(), QByteArray(hello));
+      QCOMPARE(p.end2.readAll(), hello);
    }
    static QByteArray randomData(int const size = 1024 * 1024 * 32) {
       QByteArray data;
       data.resize(size);
       char *const d = data.data();
-      for (char *p = d + data.size() - 1; p >= d; --p) *p = qrand();
+      for (char *p = d + data.size() - 1; p >= d; --p) *p = char(qrand());
       Q_ASSERT(data.size() == size);
       return data;
    }

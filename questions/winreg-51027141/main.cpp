@@ -1,23 +1,23 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/winreg-51027141
 #include <QtCore>
-#include <windows.h>
+#include <Windows.h>
 
-static LPCSTR toWChar(const QString &str) {
+static LPCTSTR toWChar(const QString &str) {
   return reinterpret_cast<const wchar_t*>(str.utf16());
 }
-static LPSTR toWChar(QString &str) {
+static LPTSTR toWChar(QString &str) {
   return const_cast<wchar_t*>(toWChar(const_cast<const QString &>(str)));
 }
 
 class RegKey {
-  HKEY handle = INVALID_HANDLE_VALUE;
-  LONG numeric() const { return (LONG)(ULONG_PTR)handle; }
+  HKEY handle = HKEY(INVALID_HANDLE_VALUE);
+  LONG_PTR numeric() const { return (LONG_PTR)(ULONG_PTR)handle; }
   explicit RegKey(HKEY handle) : handle(handle) {}
 public:
   bool isValid() const { return handle != INVALID_HANDLE_VALUE; }
   bool isPredefined() const {
-    return numeric() >= (LONG)HKEY_CLASSES_ROOT
-           && numeric() <= (LONG)HKEY_PERFORMANCE_NLSTEXT;
+    return numeric() >= (LONG_PTR)HKEY_CLASSES_ROOT
+           && numeric() <= (LONG_PTR)HKEY_PERFORMANCE_NLSTEXT;
   }
   bool isOwned() const { return numeric() >= 0; }
   static RegKey HKLM() { return RegKey(HKEY_LOCAL_MACHINE); }
@@ -25,7 +25,7 @@ public:
     RegOpenKeyEx(key.handle, toWChar(subKey), 0, KEY_ALL_ACCESS, &handle);
   }
   RegKey(RegKey &&o) { swap(o); }
-  RegKey &operator=(RegKey &&o) { return swap(o), *this; }
+  RegKey &operator=(RegKey &&o) { return static_cast<void>(swap(o)), *this; }
   RegKey(const RegKey &) = delete;
   RegKey &operator=(const RegKey &) = delete;
 
@@ -43,7 +43,8 @@ public:
         NULL, NULL, &length) != ERROR_SUCCESS)
       return {};
     QString ret;
-    ret.resize(length);
+    Q_ASSERT(length <= INT_MAX);
+    ret.resize(int(length));
     if (RegGetValue(handle, toWChar(subKey), toWChar(name), RRF_RT_REG_SZ,
         NULL, toWChar(ret), &length) != ERROR_SUCCESS)
       return {};

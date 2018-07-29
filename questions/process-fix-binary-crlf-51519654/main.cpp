@@ -7,10 +7,10 @@ bool appendBinFix(QByteArray &buf, const char *src, int size) {
   if (!size) return okData;
   constexpr char CR = '\x0d';
   constexpr char LF = '\x0a';
-  char *dst = buf.end();
-  const char *lastSrc = src;
   bool hasCR = buf.endsWith(CR);
   buf.resize(buf.size() + size);
+  char *dst = buf.end() - size;
+  const char *lastSrc = src;
   for (const char *const end = src + size; src != end; src++) {
     char const c = *src;
     if (c == LF) {
@@ -24,8 +24,7 @@ bool appendBinFix(QByteArray &buf, const char *src, int size) {
     }
     hasCR = (c == CR);
   }
-  std::copy(lastSrc, src, dst);
-  dst += (src - lastSrc);
+  dst = std::copy(lastSrc, src, dst);
   buf.resize(dst - buf.constData());
   return okData;
 }
@@ -37,6 +36,7 @@ bool appendBinFix(QByteArray &buf, const QByteArray &src) {
 #include <QtTest>
 #include <cstdio>
 #ifdef Q_OS_WIN
+#include <fcntl.h>
 #include <io.h>
 #endif
 
@@ -45,9 +45,9 @@ const auto data = QByteArrayLiteral("\x00\x11\x0d\x0d\x0a\x33");
 
 int writeOutput() {
 #ifdef Q_OS_WIN
-  _setmode(_fileno(stdout), O_BINARY);
+  _setmode(_fileno(stdout), _O_BINARY);
 #endif
-  int size = fwrite(data.data(), 1, data.size(), stdout);
+  auto size = fwrite(data.data(), 1, data.size(), stdout);
   qDebug() << size << data.size();
   return (size == data.size()) ? 0 : 1;
 }
@@ -58,9 +58,8 @@ class AppendTest : public QObject {
     QByteArray d;
     bool ok;
     bool operator==(const Result &o) const { return ok == o.ok && d == o.d; }
-    bool operator==(const QByteArray &o) const { return ok && d == o; }
   };
-  Result getFixed(const QByteArray &src, int split) {
+  static Result getFixed(const QByteArray &src, int split) {
     Result f;
     f.ok = appendBinFix(f.d, src.data(), split);
     f.ok = appendBinFix(f.d, src.data() + split, src.size() - split) && f.ok;
@@ -73,12 +72,13 @@ class AppendTest : public QObject {
   }
   Q_SLOT void worksWithCRLF() {
     const auto cr_lf = QByteArrayLiteral("\x00\x11\x0d\x0a\x33");
+    const auto cr_lf_fixed = QByteArrayLiteral("\x00\x11\x0a\x33");
     for (int i = 0; i < cr_lf.size(); ++i)
-      QCOMPARE(getFixed(cr_lf, i), QByteArrayLiteral("\x00\x11\x0a\x33"));
+      QCOMPARE(getFixed(cr_lf, i), (Result{cr_lf_fixed, true}));
   }
   Q_SLOT void worksWithCRCRLF() {
     for (int i = 0; i < data.size(); ++i)
-      QCOMPARE(getFixed(data, i), dataFixed);
+      QCOMPARE(getFixed(data, i).d, dataFixed);
   }
   Q_SLOT void worksWithQProcess() {
     QProcess proc;

@@ -326,16 +326,6 @@ struct CoreData {
 };
 Q_GLOBAL_STATIC(CoreData, coreData)
 
-void registerMapping(int typeId, int itemType) {
-   if (auto *const d = coreData()) {
-      QWriteLocker lock(&d->mappingLock);
-      for (auto &m : qAsConst(d->mapping))
-         if (m.typeId == typeId && m.itemType == itemType)
-            return;
-      d->mapping.push_back({typeId, itemType});
-   }
-}
-
 int getTypeIdForItemType(int itemType) {
    if (auto *const d = coreData()) {
       QReadLocker lock(&d->mappingLock);
@@ -344,6 +334,18 @@ int getTypeIdForItemType(int itemType) {
             return m.typeId;
    }
    return QMetaType::UnknownType;
+}
+
+void registerMapping(int typeId, int itemType) {
+   if (getTypeIdForItemType(itemType) == typeId)
+      return;
+   if (auto *const d = coreData()) {
+      QWriteLocker lock(&d->mappingLock);
+      for (auto &m : qAsConst(d->mapping))
+         if (m.typeId == typeId && m.itemType == itemType)
+            return;
+      d->mapping.push_back({typeId, itemType});
+   }
 }
 
 QDataStream &operator<<(QDataStream &ds, const QList<QGraphicsItem*> &list) {
@@ -381,7 +383,7 @@ QDataStream &operator<<(QDataStream &ds, const QGraphicsItem *item) {
    if (typeId != QMetaType::UnknownType)
       QMetaType::save(ds, typeId, item);
    else
-      ds << (int)0;
+      ds << 0;
    return ds;
 }
 
@@ -401,7 +403,7 @@ QDataStream &operator>>(QDataStream &ds, QGraphicsItem *&item) {
 }
 
 QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
-   out << (int)g.type()
+   out << int(g.type())
        << g.pos()
        << g.scale()
        << g.rotation()

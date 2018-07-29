@@ -61,13 +61,14 @@ DECLARE_GRAPHICSITEM_METATYPE(QGraphicsItem)
 DECLARE_GRAPHICSITEM_METATYPE(QAbstractGraphicsShapeItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsItemGroup)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsLineItem)
-//DECLARE_GRAPHICSITEM_METATYPE(QGraphicsObject)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsObject)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPixmapItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsEllipseItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPathItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPolygonItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsRectItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsSimpleTextItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsTextItem)
 
 class ItemStream {
    QDataStream &ds;
@@ -152,6 +153,10 @@ int main(int argc, char *argv[])
    stitem->setPos(-50,-10);
    stitem->setPen(QPen(Qt::darkGreen));
 
+   auto *titem = scene.addText("Text", {"arial", 17, true});
+   titem->setPos(-100, 0);
+   titem->setDefaultTextColor(Qt::darkYellow);
+
    auto const flags = QGraphicsItem::ItemIsMovable
          | QGraphicsItem::ItemIsSelectable
          | QGraphicsItem::ItemIsFocusable;
@@ -193,13 +198,14 @@ static bool specInit = []{
    qRegisterMetaType<QGraphicsScale>();
    registerMapping<QGraphicsItemGroup>();
    registerMapping<QGraphicsLineItem>();
-   //registerMapping<QGraphicsObject>();
+   registerMapping<QGraphicsObject>();
    registerMapping<QGraphicsPixmapItem>();
    registerMapping<QGraphicsEllipseItem>();
    registerMapping<QGraphicsPathItem>();
    registerMapping<QGraphicsPolygonItem>();
    registerMapping<QGraphicsRectItem>();
    registerMapping<QGraphicsSimpleTextItem>();
+   registerMapping<QGraphicsTextItem>();
    return true;
 }();
 
@@ -289,6 +295,22 @@ QDataStream &operator>>(QDataStream &in, QGraphicsLineItem &g) {
    return in;
 }
 
+QDataStream &operator<<(QDataStream &out, const QGraphicsObject &g) {
+   static const QByteArrayList excluded{
+      "effect", "enabled", "opacity", "parent", "pos", "rotation", "scale",
+      "transformOriginPoint", "visible", "x", "y", "z", "children"
+   };
+   out << static_cast<const QGraphicsItem &>(g);
+   saveProperties(out, &g, excluded);
+   return out;
+}
+
+QDataStream &operator>>(QDataStream &in, QGraphicsObject &g) {
+   in >> static_cast<QGraphicsItem &>(g);
+   loadProperties(in, &g);
+   return in;
+}
+
 QDataStream &operator<<(QDataStream &out, const QGraphicsPixmapItem &g) {
    out << static_cast<const QGraphicsItem&>(g);
    out << g.pixmap() << g.offset() << g.transformationMode() << g.shapeMode();
@@ -300,6 +322,23 @@ QDataStream &operator>>(QDataStream &in, QGraphicsPixmapItem &g) {
    in >> static_cast<QGraphicsItem&>(g);
    ItemStream(in, g) >> &QGI::setPixmap >> &QGI::setOffset
                      >> &QGI::setTransformationMode >> &QGI::setShapeMode;
+   return in;
+}
+
+QDataStream &operator<<(QDataStream &out, const QGraphicsTextItem &g) {
+   out << static_cast<const QGraphicsObject &>(g)
+       << g.font() << g.textWidth() << g.defaultTextColor()
+       << g.toHtml()
+       << g.tabChangesFocus() << g.openExternalLinks() << g.textInteractionFlags();
+   return out;
+}
+
+QDataStream &operator>>(QDataStream &in, QGraphicsTextItem &g) {
+   using QGI = std::decay<decltype(g)>::type;
+   in >> static_cast<QGraphicsObject &>(g);
+   ItemStream(in, g) >> &QGI::setFont >> &QGI::setTextWidth >> &QGI::setDefaultTextColor
+                     >> &QGI::setHtml
+                     >> &QGI::setTabChangesFocus >> &QGI::setOpenExternalLinks >> &QGI::setTextInteractionFlags;
    return in;
 }
 
@@ -321,7 +360,7 @@ void saveProperties(QDataStream &ds, const QObject *obj, const QByteArrayList &e
    }
    for (auto &name : obj->dynamicPropertyNames())
       map.insert(QLatin1String(name), obj->property(name));
-   qDebug() << map;
+   qDebug() << obj->metaObject()->className() << map;
    ds << map;
 }
 
@@ -416,7 +455,7 @@ QDataStream &operator<<(QDataStream &ds, const QGraphicsItem *item) {
    return ds;
 }
 
-QDataStream &operator>>(QDataStream &ds, QGraphicsItem *&item) {
+QDataStream &operator>>(QDataStream &ds, QGraphicsItem *&item) { 
    int itemType = 0;
    auto read = ds.device()->peek(reinterpret_cast<char*>(&itemType), sizeof(itemType));
    if (read != sizeof(itemType)) {

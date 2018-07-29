@@ -1,6 +1,5 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/stream-qwidgetlistitem-51403419
 #include <QtWidgets>
-#include <QtTest>
 
 //
 
@@ -29,7 +28,7 @@ public:
    void setName(const QString &n) { m_name = n; }
    ~Layer() override = default;
 protected:
-   using Format = quint8;
+   using Format = qint8;
    Layer(const QString &name, int typeId);
    static void invalidFormat(QDataStream &);
    template <typename T> T &assign(const T& o) { return static_cast<T&>(assignLayer(o)); }
@@ -63,7 +62,7 @@ Layer &Layer::assignLayer(const Layer &o) {
 }
 
 void Layer::write(QDataStream &ds) const {
-   ds << typeName() << (Format)0 << m_name << it()->pos();
+   ds << typeName() << Format(0) << m_name << it()->pos();
    QListWidgetItem::write(ds);
 }
 
@@ -94,13 +93,17 @@ QDataStream &operator<<(QDataStream &ds, const Layer *l) {
 QByteArray peekByteArray(QDataStream &ds) {
    qint32 size;
    auto read = ds.device()->peek(reinterpret_cast<char*>(&size), sizeof(size));
-   if (read != sizeof(size))
-      return ds.setStatus(QDataStream::ReadPastEnd), QByteArray();
+   if (read != sizeof(size)) {
+      ds.setStatus(QDataStream::ReadPastEnd);
+      return {};
+   }
    if (ds.byteOrder() == QDataStream::BigEndian)
       size = qFromBigEndian(size);
    auto buf = ds.device()->peek(size + 4);
-   if (buf.size() != size + 4)
-      return ds.setStatus(QDataStream::ReadPastEnd), QByteArray();
+   if (buf.size() != size + 4) {
+      ds.setStatus(QDataStream::ReadPastEnd);
+      return {};
+   }
    if (buf.endsWith('\0')) buf.chop(1);
    return buf.mid(4);
 }
@@ -204,6 +207,8 @@ void VectorLayer::read(QDataStream &ds) {
 }
 
 //
+
+#include <QtTest>
 
 class LayerTest : public QObject {
    Q_OBJECT

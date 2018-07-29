@@ -49,7 +49,9 @@ void registerMapping(int typeId, int itemType);
 template <typename T>
 typename std::enable_if<std::is_base_of<QGraphicsItem, T>::value>::type registerMapping() {
    qRegisterMetaTypeStreamOperators<T>();
-   registerMapping(qMetaTypeId<T>(), T::Type);
+   if (!std::is_base_of<QGraphicsObject, T>::value)
+      // The QObject-derived types don't need such mappings.
+      registerMapping(qMetaTypeId<T>(), T::Type);
 }
 
 QDataStream &operator<<(QDataStream &, const QGraphicsItem *);
@@ -58,10 +60,10 @@ QDataStream &operator>>(QDataStream &, QGraphicsItem *&);
 DECLARE_POLYMORPHIC_METATYPE(QGraphicsTransform, QGraphicsRotation)
 DECLARE_POLYMORPHIC_METATYPE(QGraphicsTransform, QGraphicsScale)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsItem)
+DECLARE_GRAPHICSITEM_METATYPE(QGraphicsObject)
 DECLARE_GRAPHICSITEM_METATYPE(QAbstractGraphicsShapeItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsItemGroup)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsLineItem)
-DECLARE_GRAPHICSITEM_METATYPE(QGraphicsObject)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPixmapItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsEllipseItem)
 DECLARE_GRAPHICSITEM_METATYPE(QGraphicsPathItem)
@@ -198,7 +200,6 @@ static bool specInit = []{
    qRegisterMetaType<QGraphicsScale>();
    registerMapping<QGraphicsItemGroup>();
    registerMapping<QGraphicsLineItem>();
-   registerMapping<QGraphicsObject>();
    registerMapping<QGraphicsPixmapItem>();
    registerMapping<QGraphicsEllipseItem>();
    registerMapping<QGraphicsPathItem>();
@@ -295,22 +296,6 @@ QDataStream &operator>>(QDataStream &in, QGraphicsLineItem &g) {
    return in;
 }
 
-QDataStream &operator<<(QDataStream &out, const QGraphicsObject &g) {
-   static const QByteArrayList excluded{
-      "effect", "enabled", "opacity", "parent", "pos", "rotation", "scale",
-      "transformOriginPoint", "visible", "x", "y", "z", "children"
-   };
-   out << static_cast<const QGraphicsItem &>(g);
-   saveProperties(out, &g, excluded);
-   return out;
-}
-
-QDataStream &operator>>(QDataStream &in, QGraphicsObject &g) {
-   in >> static_cast<QGraphicsItem &>(g);
-   loadProperties(in, &g);
-   return in;
-}
-
 QDataStream &operator<<(QDataStream &out, const QGraphicsPixmapItem &g) {
    out << static_cast<const QGraphicsItem&>(g);
    out << g.pixmap() << g.offset() << g.transformationMode() << g.shapeMode();
@@ -329,7 +314,7 @@ QDataStream &operator<<(QDataStream &out, const QGraphicsTextItem &g) {
    out << static_cast<const QGraphicsObject &>(g)
        << g.font() << g.textWidth() << g.defaultTextColor()
        << g.toHtml()
-       << g.tabChangesFocus() << g.openExternalLinks() << g.textInteractionFlags();
+       << g.tabChangesFocus() << g.textInteractionFlags();
    return out;
 }
 
@@ -338,7 +323,7 @@ QDataStream &operator>>(QDataStream &in, QGraphicsTextItem &g) {
    in >> static_cast<QGraphicsObject &>(g);
    ItemStream(in, g) >> &QGI::setFont >> &QGI::setTextWidth >> &QGI::setDefaultTextColor
                      >> &QGI::setHtml
-                     >> &QGI::setTabChangesFocus >> &QGI::setOpenExternalLinks >> &QGI::setTextInteractionFlags;
+                     >> &QGI::setTabChangesFocus >> &QGI::setTextInteractionFlags;
    return in;
 }
 
@@ -347,15 +332,17 @@ QDataStream &operator>>(QDataStream &in, QGraphicsTextItem &g) {
 
 void saveProperties(QDataStream &ds, const QObject *obj, const QByteArrayList &excluded) {
    QVariantMap map;
+   QByteArray name;
    auto const &mo = obj->metaObject();
    for (int i = 0; i < mo->propertyCount(); ++i) {
       auto const &mp = mo->property(i);
       if (!mp.isStored(obj))
          continue;
-      if (!excluded.contains(mp.name())) {
+      name = mp.name();
+      if (!excluded.contains(name)) {
          auto prop = mp.read(obj);
-         if (!prop.isNull())
-            map.insert(QLatin1String(mp.name()), prop);
+         if (!prop.isNull() && (!excluded.contains(name + '?') || prop != QVariant(prop.userType(), nullptr)))
+            map.insert(QLatin1String(name), prop);
       }
    }
    for (auto &name : obj->dynamicPropertyNames())
@@ -416,6 +403,23 @@ void registerMapping(int typeId, int itemType) {
    }
 }
 
+QByteArray peekByteArray(QDataStream &ds) {
+   qint32 size;
+   auto read = ds.device()->peek(reinterpret_cast<char *>(&size), sizeof(size));
+   if (read != sizeof(size)) {
+      ds.setStatus(QDataStream::ReadPastEnd);
+      return {};
+   }
+   if (ds.byteOrder() == QDataStream::BigEndian) size = qFromBigEndian(size);
+   auto buf = ds.device()->peek(size + 4);
+   if (buf.size() != size + 4) {
+      ds.setStatus(QDataStream::ReadPastEnd);
+      return {};
+   }
+   if (buf.endsWith('\0')) buf.chop(1);
+   return buf.mid(4);
+}
+
 QDataStream &operator<<(QDataStream &ds, const QList<QGraphicsItem*> &list) {
    std::set<QGraphicsItem*> seen;
    QList<QGraphicsItem*> items;
@@ -447,32 +451,40 @@ QDataStream &operator<<(QDataStream &ds, const QList<QGraphicsItem*> &list) {
 }
 
 QDataStream &operator<<(QDataStream &ds, const QGraphicsItem *item) {
-   int const typeId = getTypeIdForItemType(item->type());
+   const QGraphicsObject *obj = item->toGraphicsObject();
+   const int typeId = obj ?
+      QMetaType::type(obj->metaObject()->className()) :
+      getTypeIdForItemType(item->type());
    if (typeId != QMetaType::UnknownType)
       QMetaType::save(ds, typeId, item);
    else
-      ds << int(QMetaType::UnknownType);
+      ds << "";
    return ds;
 }
 
-QDataStream &operator>>(QDataStream &ds, QGraphicsItem *&item) { 
-   int itemType = 0;
-   auto read = ds.device()->peek(reinterpret_cast<char*>(&itemType), sizeof(itemType));
-   if (read != sizeof(itemType)) {
-      ds.setStatus(QDataStream::ReadPastEnd);
+QDataStream &operator>>(QDataStream &ds, QGraphicsItem *&item) {
+   QByteArray const typeName = peekByteArray(ds);
+   if (ds.status() != QDataStream::Ok)
       return ds;
-   }
-   itemType = qFromBigEndian(itemType);
-   int const typeId = getTypeIdForItemType(itemType);
+   const int typeId = QMetaType::type(typeName);
    item = static_cast<QGraphicsItem*>(QMetaType::create(typeId));
    if (item)
       QMetaType::load(ds, typeId, item);
    return ds;
 }
 
+QByteArray getTypeName(const QGraphicsItem &g) {
+   const QGraphicsObject *obj = g.toGraphicsObject();
+   if (obj)
+      return obj->metaObject()->className();
+   return QMetaType::typeName(getTypeIdForItemType(g.type()));
+}
+
 QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
-   out << int(g.type())
+   out << getTypeName(g)
        << ItemStream::CurVersion
+       << bool(g.toGraphicsObject())
+       << int(g.type())
        << g.pos()
        << g.scale()
        << g.rotation()
@@ -500,20 +512,24 @@ QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
 
 QDataStream &operator>>(QDataStream &in, QGraphicsItem &g) {
    using QGI = std::decay<decltype(g)>::type;
+   QByteArray typeName;
+   bool isObject;
    int type;
    ItemStream::Version version;
    QTransform transform;
    QList<QGraphicsItem*> children;
-
-   in    >> type
+   in    >> typeName
          >> version;
-   Q_ASSERT(g.type() == type);
+
+   Q_ASSERT(getTypeName(g) == typeName);
    if (version > ItemStream::CurVersion) {
       qWarning() << "unsupported QGraphicsItem version" << version << "maximum is:" << ItemStream::CurVersion;
       in.setStatus(QDataStream::ReadCorruptData);
       return in;
    }
    ItemStream::setVersion(g, version);
+   in    >> isObject
+         >> type;
    ItemStream iin(in, g);
    iin   >> &QGI::setPos
          >> &QGI::setScale
@@ -543,6 +559,23 @@ QDataStream &operator>>(QDataStream &in, QGraphicsItem &g) {
 
    for (auto *c : qAsConst(children))
       c->setParentItem(&g);
+   return in;
+}
+
+QDataStream &operator<<(QDataStream &out, const QGraphicsObject &g) {
+   static const QByteArrayList excluded{
+      "effect", "enabled", "opacity", "parent", "pos", "rotation", "scale",
+      "transformOriginPoint", "visible", "x", "y", "z", "children",
+      "height?", "width?"
+   };
+   out << static_cast<const QGraphicsItem &>(g);
+   saveProperties(out, &g, excluded);
+   return out;
+}
+
+QDataStream &operator>>(QDataStream &in, QGraphicsObject &g) {
+   in >> static_cast<QGraphicsItem &>(g);
+   loadProperties(in, &g);
    return in;
 }
 

@@ -73,6 +73,9 @@ class ItemStream {
    QDataStream &ds;
    QGraphicsItem &item;
 public:
+   using Version = qint8;
+   static constexpr Version CurVersion = 1;
+   enum { VersionKey = 0x9000 };
    ItemStream(QDataStream &ds, class QGraphicsItem &item) : ds(ds), item(item) {}
    template <typename C, typename T> ItemStream &operator>>(void (C::*set)(T)) {
       using decayed_type = typename std::decay<T>::type;
@@ -82,6 +85,13 @@ public:
       ds >> value;
       (static_cast<C&>(item).*set)(static_cast<T>(value));
       return *this;
+   }
+   static Version formatOf(const QGraphicsItem &item) {
+      auto version = item.data(VersionKey);
+      return Version(version.isValid() ? version.value<int>() : 0);
+   }
+   static void setVersion(QGraphicsItem &item, Version version) {
+      item.setData(VersionKey, version);
    }
 };
 
@@ -383,7 +393,7 @@ QDataStream &operator<<(QDataStream &ds, const QGraphicsItem *item) {
    if (typeId != QMetaType::UnknownType)
       QMetaType::save(ds, typeId, item);
    else
-      ds << 0;
+      ds << int(QMetaType::UnknownType);
    return ds;
 }
 
@@ -404,6 +414,7 @@ QDataStream &operator>>(QDataStream &ds, QGraphicsItem *&item) {
 
 QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
    out << int(g.type())
+       << ItemStream::CurVersion
        << g.pos()
        << g.scale()
        << g.rotation()
@@ -413,6 +424,17 @@ QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
        << g.flags()
        << g.isEnabled()
        << g.isSelected()
+       << g.isVisible()
+       << g.acceptDrops()
+       << g.acceptHoverEvents()
+       << g.acceptTouchEvents()
+       << g.acceptedMouseButtons()
+       << g.filtersChildEvents()
+       << g.cursor()
+       << g.inputMethodHints()
+       << g.opacity()
+       << g.boundingRegionGranularity()
+       << g.toolTip()
        << g.zValue()
        << g.childItems();
    return out;
@@ -421,11 +443,19 @@ QDataStream &operator<<(QDataStream &out, const QGraphicsItem &g) {
 QDataStream &operator>>(QDataStream &in, QGraphicsItem &g) {
    using QGI = std::decay<decltype(g)>::type;
    int type;
+   ItemStream::Version version;
    QTransform transform;
    QList<QGraphicsItem*> children;
 
-   in >> type;
+   in    >> type
+         >> version;
    Q_ASSERT(g.type() == type);
+   if (version > ItemStream::CurVersion) {
+      qWarning() << "unsupported QGraphicsItem version" << version << "maximum is:" << ItemStream::CurVersion;
+      in.setStatus(QDataStream::ReadCorruptData);
+      return in;
+   }
+   ItemStream::setVersion(g, version);
    ItemStream iin(in, g);
    iin   >> &QGI::setPos
          >> &QGI::setScale
@@ -436,9 +466,23 @@ QDataStream &operator>>(QDataStream &in, QGraphicsItem &g) {
          >> &QGI::setTransformOriginPoint
          >> &QGI::setFlags
          >> &QGI::setEnabled
-         >> &QGI::setSelected
-         >> &QGI::setZValue;
+         >> &QGI::setSelected;
+   if (version >= 1) {
+      iin >> &QGI::setVisible
+            >> &QGI::setAcceptDrops
+            >> &QGI::setAcceptHoverEvents
+            >> &QGI::setAcceptTouchEvents
+            >> &QGI::setAcceptedMouseButtons
+            >> &QGI::setFiltersChildEvents
+            >> &QGI::setCursor
+            >> &QGI::setInputMethodHints
+            >> &QGI::setOpacity
+            >> &QGI::setBoundingRegionGranularity
+            >> &QGI::setToolTip;
+   }
+   iin   >> &QGI::setZValue;
    in    >> children;
+
    for (auto *c : qAsConst(children))
       c->setParentItem(&g);
    return in;

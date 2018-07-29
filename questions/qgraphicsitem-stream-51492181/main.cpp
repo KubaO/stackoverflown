@@ -7,15 +7,15 @@
 #include <type_traits>
 #include <algorithm>
 
-template <typename T> struct NonConstructibleFunctionHelper {
+template <class B, class T> struct NonConstructibleFunctionHelper {
    static void *Construct(void *, const void *) { return {}; }
-   static void Destruct(void *t) { static_cast<T*>(t)->~T(); }
-   static void Save(QDataStream &ds, const void *t) { ds << *static_cast<const T*>(t); }
-   static void Load(QDataStream &ds, void *t) { ds >> *static_cast<T*>(t); }
+   static void Destruct(void *t) { static_cast<T*>(static_cast<B*>(t))->~T(); }
+   static void Save(QDataStream &ds, const void *t) { ds << *static_cast<const T*>(static_cast<const B*>(t)); }
+   static void Load(QDataStream &ds, void *t) { ds >> *static_cast<T*>(static_cast<B*>(t)); }
 };
 
-template <typename T> struct NonCopyableFunctionHelper : NonConstructibleFunctionHelper<T> {
-   static void *Construct(void *where, const void *t) { return (!t) ? new (where) T : nullptr; }
+template <class B, class T> struct NonCopyableFunctionHelper : NonConstructibleFunctionHelper<B, T> {
+   static void *Construct(void *where, const void *t) { return (!t) ? static_cast<B*>(new (where) T) : nullptr; }
 };
 
 #define DECLARE_POLYMORPHIC_METATYPE(BASE_TYPE, TYPE) DECLARE_POLYMORPHIC_METATYPE_IMPL(BASE_TYPE, TYPE)
@@ -23,8 +23,8 @@ template <typename T> struct NonCopyableFunctionHelper : NonConstructibleFunctio
    QT_BEGIN_NAMESPACE namespace QtMetaTypePrivate {               \
    template <> struct QMetaTypeFunctionHelper<TYPE> :             \
       std::conditional<std::is_copy_constructible<TYPE>::value, void, \
-      std::conditional<std::is_default_constructible<TYPE>::value, NonCopyableFunctionHelper<TYPE>, \
-      NonConstructibleFunctionHelper<TYPE>                        \
+      std::conditional<std::is_default_constructible<TYPE>::value, NonCopyableFunctionHelper<BASE_TYPE, TYPE>, \
+      NonConstructibleFunctionHelper<BASE_TYPE, TYPE>             \
       >::type >::type {};                                         \
    QT_END_NAMESPACE }                                             \
    Q_DECLARE_METATYPE_IMPL(TYPE)

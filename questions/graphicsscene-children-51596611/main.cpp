@@ -1,9 +1,13 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/graphicsscene-children-51596611
 #include <QtWidgets>
 #include <array>
-#include <memory>
+#define SOLUTION(s) ((!!(s)) << (s))
+#define HAS_SOLUTION(s) (!!(SOLUTIONS & SOLUTION(s)))
+#define SOLUTIONS (SOLUTION(1) | SOLUTION(2) | SOLUTION(3))
 
-class SizeGripItem : public QGraphicsItem {
+class SizeGripItem : public QGraphicsObject {
+   Q_OBJECT
+   enum { kMoveInHandle, kInitialPos, kPressPos };
    struct HandleItem : QGraphicsRectItem {
       HandleItem() : QGraphicsRectItem(-4, -4, 8, 8) {
          setBrush(Qt::lightGray);
@@ -14,11 +18,38 @@ class SizeGripItem : public QGraphicsItem {
          if (change == ItemPositionHasChanged) parent()->handleMoved(this);
          return value;
       }
+#if HAS_SOLUTION(2)
+      bool sceneEvent(QEvent *event) override {
+         return (data(kMoveInHandle).toBool() && hasSelectedMovableAncestor(this) &&
+                 processMove(this, event)) ||
+                QGraphicsRectItem::sceneEvent(event);
+      }
+#endif
    };
-   using Resizer = std::function<void(QGraphicsItem *, const QRectF &)>;
+#if HAS_SOLUTION(2) || HAS_SOLUTION(3)
+   static bool processMove(QGraphicsItem *item, QEvent *ev) {
+      auto mev = static_cast<QGraphicsSceneMouseEvent *>(ev);
+      if (ev->type() == QEvent::GraphicsSceneMousePress &&
+          mev->button() == Qt::LeftButton) {
+         item->setData(kInitialPos, item->pos());
+         item->setData(kPressPos, item->mapToParent(mev->pos()));
+         return true;
+      } else if (ev->type() == QEvent::GraphicsSceneMouseMove &&
+                 mev->buttons() == Qt::LeftButton) {
+         auto delta = item->mapToParent(mev->pos()) - item->data(kPressPos).toPointF();
+         item->setPos(item->data(kInitialPos).toPointF() + delta);
+         return true;
+      }
+      return false;
+   }
+   static bool hasSelectedMovableAncestor(const QGraphicsItem *item) {
+      auto *p = item->parentItem();
+      return p && ((p->isSelected() && (p->flags() & QGraphicsItem::ItemIsMovable)) ||
+                   hasSelectedMovableAncestor(p));
+   }
+#endif
    std::array<HandleItem, 4> handles_;
    QRectF rect_;
-   Resizer resizer_;
    void updateHandleItemPositions() {
       static auto get = {&QRectF::topLeft, &QRectF::topRight, &QRectF::bottomLeft,
                          &QRectF::bottomRight};
@@ -34,124 +65,175 @@ class SizeGripItem : public QGraphicsItem {
    }
 
   public:
-   SizeGripItem(Resizer r, QGraphicsItem *parent) : QGraphicsItem(parent), resizer_(r) {
-      setFlags(/*ItemIsMovable | ItemSendsGeometryChanges |*/ ItemHasNoContents);
+   SizeGripItem(QGraphicsItem *parent = {}) : QGraphicsObject(parent) {
       for (auto &h : handles_) h.setParentItem(this);
+      setFlags(ItemHasNoContents);
    }
    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override {
       if (change == QGraphicsItem::ItemPositionHasChanged) resize();
       return value;
    }
-   QRectF boundingRect() const override { return rect_; }
    void paint(QPainter *, const QStyleOptionGraphicsItem *, QWidget *) override {}
+   QRectF boundingRect() const override { return rect_; }
    void setRect(const QRectF &rect) {
       rect_ = mapRectFromParent(rect);
       resize();
       updateHandleItemPositions();
    }
-   void resize() {
-      if (resizer_) resizer_(parentItem(), mapRectToParent(rect_));
+   void resize() { emit rectChanged(mapRectToParent(rect_), parentItem()); }
+   Q_SIGNAL void rectChanged(const QRectF &, QGraphicsItem *);
+#if SOLUTIONS
+   void selectSolution(int i) {
+#if HAS_SOLUTION(1)
+      setFlag(ItemIsMovable, i == 1);
+      setFlag(ItemSendsGeometryChanges, i == 1);
+      if (i != 1) {
+         auto rect = mapRectToParent(rect_);
+         setPos({});  // reset position if we're leaving the movable mode
+         setRect(rect);
+      }
+      i--;
+#endif
+      for (auto &h : handles_) {
+         int ii = i;
+#if HAS_SOLUTION(2)
+         h.setData(kMoveInHandle, ii-- == 1);
+#endif
+#if HAS_SOLUTION(3)
+         if (ii == 1)
+            h.installSceneEventFilter(this);
+         else
+            h.removeSceneEventFilter(this);
+#endif
+      }
    }
+#endif
+#if HAS_SOLUTION(3)
+   bool sceneEventFilter(QGraphicsItem *item, QEvent *ev) override {
+      if (hasSelectedMovableAncestor(item)) return processMove(item, ev);
+      return false;
+   }
+#endif
 };
 
 class SignalingBoxItem : public QObject, public QGraphicsRectItem {
    Q_OBJECT
-   SizeGripItem m_sizeGrip{resizer, this};
-   static void resizer(QGraphicsItem *item, const QRectF &rect) {
-      static_cast<SignalingBoxItem *>(item)->setRect(rect);
-   }
+   SizeGripItem m_sizeGrip{this};
    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override {
-      if (change == QGraphicsItem::ItemSelectedHasChanged) {
-         m_sizeGrip.setRect(rect());
+      if (change == QGraphicsItem::ItemSelectedHasChanged)
          m_sizeGrip.setVisible(value.toBool());
-      } else if (change == QGraphicsItem::ItemScenePositionHasChanged)
+      else if (change == QGraphicsItem::ItemScenePositionHasChanged)
          emitRectChanged();
       return value;
    }
    void emitRectChanged() { emit rectChanged(mapRectToScene(rect())); }
+   void setRectImpl(const QRectF &rect) {
+      QGraphicsRectItem::setRect(rect);
+      emitRectChanged();
+   }
 
   public:
    SignalingBoxItem(const QRectF &rect = {}, QGraphicsItem *parent = {})
        : QGraphicsRectItem(rect, parent) {
-      setFlags(QGraphicsItem::ItemIsMovable | QGraphicsItem::ItemIsSelectable |
-               QGraphicsItem::ItemSendsScenePositionChanges);
+      setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsScenePositionChanges);
       m_sizeGrip.hide();
+      connect(&m_sizeGrip, &SizeGripItem::rectChanged, this,
+              &SignalingBoxItem::setRectImpl);
    }
    void setRect(const QRectF &rect) {
-      QGraphicsRectItem::setRect(rect);
-      qDebug() << boundingRect();
-      emitRectChanged();
+      setSelected(false);
+      m_sizeGrip.setRect(rect);
+      setRectImpl(rect);
    }
-   /// Rectangle in scene coordinates
-   Q_SIGNAL void rectChanged(const QRectF &);
+   Q_SIGNAL void rectChanged(const QRectF &);  // Rectangle in scene coordinates
+#if SOLUTIONS
+   void selectSolution(int index) {
+      setFlag(ItemIsMovable, !HAS_SOLUTION(1) || index != 1);
+      m_sizeGrip.selectSolution(index);
+   }
+#endif
 };
 
 class SampleEditor : public QGraphicsView {
    Q_OBJECT
    bool m_activeDrag = false;
-   QPointer<SignalingBoxItem> m_box;
+   SignalingBoxItem m_box;
    QPointF m_dragStart;
 
   public:
-   using base = QGraphicsView;
-   using QGraphicsView::QGraphicsView;
-
+   SampleEditor(QGraphicsScene *scene) : QGraphicsView(scene) {
+      scene->addItem(&m_box);
+      connect(&m_box, &SignalingBoxItem::rectChanged, this, &SampleEditor::rectChanged);
+   }
+   Q_SIGNAL void rectChanged(const QRectF &);
    void mousePressEvent(QMouseEvent *event) override {
-      qDebug() << event;
       QGraphicsView::mousePressEvent(event);
-      qDebug() << event;
-      if (event->buttons() == Qt::RightButton) {
-         m_dragStart = mapToScene(event->pos());
-         if (!m_box) {
-            m_box = new SignalingBoxItem;
-            scene()->addItem(m_box);
-            connect(m_box, &SignalingBoxItem::rectChanged, this,
-                    &SampleEditor::rectChanged);
-         }
+      if (event->button() == Qt::RightButton) {
+         m_dragStart = m_box.mapFromScene(mapToScene(event->pos()));
          m_activeDrag = true;
-         m_box->show();
-         m_box->setRect({m_dragStart, m_dragStart});
+         m_box.show();
+         m_box.setRect({m_dragStart, m_dragStart});
          event->accept();
       }
    }
    void mouseMoveEvent(QMouseEvent *event) override {
-      qDebug() << event;
       QGraphicsView::mouseMoveEvent(event);
-      if (m_activeDrag && m_box) {
-         m_box->setRect({m_dragStart, mapToScene(event->pos())});
+      if (m_activeDrag) {
+         m_box.setRect({m_dragStart, m_box.mapFromScene(mapToScene(event->pos()))});
          event->accept();
       }
    }
    void mouseReleaseEvent(QMouseEvent *event) override {
       QGraphicsView::mouseReleaseEvent(event);
-      if (m_activeDrag && m_box) {
-         emit rectChanged(m_box->rect());
+      if (m_activeDrag && event->button() == Qt::RightButton) {
          event->accept();
+         m_activeDrag = false;
       }
-      m_activeDrag = false;
    }
    void resizeEvent(QResizeEvent *event) override {
       QGraphicsView::resizeEvent(event);
       scene()->setSceneRect(contentsRect());
    }
-   Q_SIGNAL void rectChanged(const QRectF &);
+#if SOLUTIONS
+   void selectSolution(int index) { m_box.selectSolution(index); }
+#endif
 };
 
 int main(int argc, char *argv[]) {
    QApplication a(argc, argv);
    QWidget ui;
-   QVBoxLayout layout{&ui};
+   QGridLayout layout{&ui};
    QGraphicsScene scene;
    SampleEditor editor(&scene);
+   QComboBox sel;
    QLabel status;
-   layout.addWidget(&editor);
-   layout.addWidget(&status);
+   layout.addWidget(&editor, 0, 0, 1, 2);
+   layout.addWidget(&sel, 1, 0);
+   layout.addWidget(&status, 1, 1);
+   sel.addItems({
+      "Original (Movable SignalingBoxItem)",
+#if HAS_SOLUTION(1)
+          "Movable SizeGripItem",
+#endif
+#if HAS_SOLUTION(2)
+          "Reimplemented HandleItem",
+#endif
+#if HAS_SOLUTION(3)
+          "Filtering SizeGripItem",
+#endif
+   });
+   sel.setCurrentIndex(-1);
+#if SOLUTIONS
+   QObject::connect(&sel, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    [&](int index) { editor.selectSolution(index); });
+#endif
    QObject::connect(&editor, &SampleEditor::rectChanged, &status,
                     [&](const QRectF &rect) {
                        QString s;
                        QDebug(&s) << rect;
                        status.setText(s);
                     });
+   sel.setCurrentIndex((sel.count() > 1) ? 1 : 0);
    ui.setMinimumSize(640, 480);
    ui.show();
    return a.exec();

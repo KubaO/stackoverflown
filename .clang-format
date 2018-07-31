@@ -1,6 +1,8 @@
 BasedOnStyle: Google
 ColumnLimit: 90
 IndentWidth: 3
+DerivePointerAlignment: false
+PointerAlignment: Right
 IncludeCategories:
   - Regex:    '^<private/.+\.h>'
     Priority: 0

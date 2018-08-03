@@ -1,27 +1,21 @@
 // https://github.com/KubaO/stackoverflown/tree/master/tooling
 
-#include <QtGui>
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#include <private/qhooks_p.h>
-#include <QtWidgets>
-#endif
 #include "backport.h"
 #include "tooling.h"
 
+#include <QApplication>
+#include <QDebug>
+#include <QDesktopWidget>
+#include <QDir>
+#include <QFile>
+#include <QPainter>
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <private/qhooks_p.h>
+#include <QScreen>
+#include <QWindow>
+#endif
+
 namespace tooling {
-
-void showTime(const char *name = {}) {
-   auto time = QTime::currentTime().toString("HH:mm:ss.zzz");
-   if (name)
-      qDebug() << time << name;
-   else
-      qDebug() << time;
-}
-
-bool isAncestorOf(QObject *ancestor, QObject *obj) {
-   while (obj && obj != ancestor) obj = obj->parent();
-   return obj && obj == ancestor;
-}
 
 class ScreenshotTaker : public QObject {
    int const n;
@@ -123,7 +117,7 @@ static void startupHook() {
    tooling::QTimer::singleShot(0, qApp, takeScreenshots);
 }
 
-void registerCallback() {
+static void registerCallback() {
    static qInternalCallback const hook = [](void **data) {
       static int recursionLevel;
       static bool entered;

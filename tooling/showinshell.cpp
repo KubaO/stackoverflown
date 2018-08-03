@@ -38,7 +38,7 @@
 
 namespace tooling {
 
-QString substituteFileBrowserParameters(const QString &pre, const QString &file) {
+static QString substituteFileBrowserParameters(const QString &pre, const QString &file) {
    QString cmd;
    for (int i = 0; i < pre.size(); ++i) {
       QChar c = pre.at(i);

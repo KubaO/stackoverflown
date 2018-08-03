@@ -12,8 +12,6 @@ class QString;
 
 namespace tooling {
 
-bool isAncestorOf(QObject *ancestor, QObject *obj);
-
 struct HostOsInfo {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && defined(QT_WIDGETS_LIB) || \
     QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && defined(QT_GUI_LIB)
@@ -34,5 +32,8 @@ struct HostOsInfo {
 #endif
 };
 
+void showTime(const char *name = {});
+bool isAncestorOf(QObject *ancestor, QObject *obj);
 bool showInGraphicalShell(QObject *parent, const QString &pathIn);
+
 }  // namespace tooling

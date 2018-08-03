@@ -19,7 +19,9 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 
   SOURCES += \
     $$TOOLING_PWD/backport.cpp \
-    $$TOOLING_PWD/showinshell.cpp
+    $$TOOLING_PWD/showinshell.cpp \
+    $$TOOLING_PWD/standardpaths.cpp \
+    $$TOOLING_PWD/tooling.cpp
 
   equals(TOOLING_HAS_WIDGETS, 1) {
     SOURCES += \
@@ -27,9 +29,4 @@ greaterThan(QT_MAJOR_VERSION, 4) {
   }
 }
 
-HEADERS += \
-    $$PWD/tooling.h
-
-SOURCES += \
-    $$PWD/standardpaths.cpp
 

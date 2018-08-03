@@ -10,16 +10,16 @@
 #include <QFile>
 #include <QPainter>
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#if 0  // The Qt-4 style hooks work just fine and are portable.
 #include <private/qhooks_p.h>
+#endif
 #include <QScreen>
 #include <QWindow>
 #endif
 
 namespace tooling {
 
-static int constexpr screenshotDelay() {
-   return HostOsInfo::isMacHost() ? 250 : 500;
-}
+static int constexpr screenshotDelay() { return HostOsInfo::isMacHost() ? 250 : 500; }
 
 class ScreenshotTaker : public QObject {
    int const n;
@@ -68,7 +68,7 @@ class ScreenshotTaker : public QObject {
       if (QT_VERSION < QT_VERSION_CHECK(5, 3, 0))
          pix = QPixmap::grabWindow(QApplication::desktop()->winId());
 
-      if (1) {
+      if ((1)) {
          pix = pix.copy(rect);
       } else {
          QPainter p(&pix);
@@ -105,52 +105,26 @@ class ScreenshotTaker : public QObject {
    }
 };
 
+void takeScreenshot(QWidget *widget) {
+   static int n = 1;
+   new ScreenshotTaker(n++, widget);
+}
+
 static void takeScreenshots() {
-   int n = 1;
    for (auto *widget : QApplication::topLevelWidgets()) {
       Q_ASSERT(widget);
       if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && HostOsInfo::isMacHost()) {
          widget->raise();
          qDebug() << "Raising" << widget << "for a screenshot";
       }
-      new ScreenshotTaker(n, widget);
+      takeScreenshot(widget);
    }
 }
 
-static void startupHook() {
-   qDebug() << "SO Tooling: Startup";
-   tooling::QTimer::singleShot(0, qApp, takeScreenshots);
-}
+static void startupHook() { tooling::QTimer::singleShot(0, qApp, takeScreenshots); }
 
-static void registerCallback() {
-   static qInternalCallback const hook = [](void **data) {
-      static int recursionLevel;
-      static bool entered;
-      auto *const receiver = reinterpret_cast<const QObject *>(data[0]);
-      if (recursionLevel > 10) {
-         qWarning() << "Tooling startup callback: recursed too deep, level is "
-                    << recursionLevel;
-         entered = true;
-      }
-      if (entered) return false;
-      recursionLevel++;
-      entered = qobject_cast<const QApplication *>(receiver) &&
-                QAbstractEventDispatcher::instance();
-      if (!entered) return false;
-      startupHook();
-      QInternal::unregisterCallback(QInternal::EventNotifyCallback, hook);
-      entered = false;
-      --recursionLevel;
-      return false;  // we don't filter the event
-   };
-   QInternal::registerCallback(QInternal::EventNotifyCallback, hook);
-}
-
-static bool hooksInitialized = [] {
-   registerCallback();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
-   if (0) qtHookData[QHooks::Startup] = reinterpret_cast<quintptr>(&startupHook);
-#endif
+static bool initialized = [] {
+   detail::registerHook(detail::HasQApplicationHook, &startupHook);
    return true;
 }();
 

@@ -9,6 +9,7 @@
 
 class QObject;
 class QString;
+class QWidget;
 
 namespace tooling {
 
@@ -35,5 +36,14 @@ struct HostOsInfo {
 void showTime(const char *name = {});
 bool isAncestorOf(QObject *ancestor, QObject *obj);
 bool showInGraphicalShell(QObject *parent, const QString &pathIn);
+void takeScreenshot(QWidget *widget);
+
+namespace detail {
+
+enum { HasQApplicationHook };
+
+void registerHook(int type, void (*)());
+
+}  // namespace detail
 
 }  // namespace tooling

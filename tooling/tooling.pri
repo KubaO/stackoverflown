@@ -10,7 +10,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 }
 
 !defined(NO_TOOLING) {
-  greaterThan(QT_MAJOR_VERSION, 4): QT *= core_private
+  greaterThan(QT_MAJOR_VERSION, 4): QT *= core
   else: QT *= core
 
   HEADERS += \

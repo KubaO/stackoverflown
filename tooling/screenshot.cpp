@@ -17,6 +17,10 @@
 
 namespace tooling {
 
+static int constexpr screenshotDelay() {
+   return HostOsInfo::isMacHost() ? 250 : 500;
+}
+
 class ScreenshotTaker : public QObject {
    int const n;
    bool updated = false;
@@ -35,7 +39,7 @@ class ScreenshotTaker : public QObject {
          auto *w = static_cast<QWidget *>(parent());
          if (ev->type() == QEvent::Paint && w->isActiveWindow() && !timer.isActive()) {
             qDebug() << "Deferring screenshot for" << w;
-            timer.start(250, this);
+            timer.start(screenshotDelay(), this);
          } else if (!updated && ev->type() != QEvent::Paint && w->isActiveWindow()) {
             w->update();
             updated = true;
@@ -53,7 +57,8 @@ class ScreenshotTaker : public QObject {
       qDebug() << "Saw" << eventCount << "events before taking a screenshot.";
    }
    static void take(int n, QWidget *w) {
-      auto rect = w->frameGeometry().adjusted(-1, -1, 1, 1);
+      auto rect = w->frameGeometry();
+      if (HostOsInfo::isMacHost()) rect.adjust(-1, -1, 1, 1);
       QPixmap pix;
 #if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
       auto *const win = w->windowHandle();

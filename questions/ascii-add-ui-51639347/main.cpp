@@ -28,14 +28,14 @@ int main(int argc, char *argv[]) {
       for (QChar &ch : text) {
          auto doLimit = limit && ch >= 32 && ch <= 127;
          ch = {ch.unicode() + delta};
-         if (doLimit)
-            ch = {((ch.unicode() - 32) % (128-32)) + 32};
+         if (doLimit) ch = {((ch.unicode() - 32) % (128 - 32)) + 32};
       }
       output.setText(text);
    };
    for (auto ed : {&input, &offset})
       QObject::connect(ed, &QLineEdit::textChanged, calculate);
    QObject::connect(&ascii, &QCheckBox::toggled, calculate);
+
    offset.setText("1");
    return a.exec();
 }

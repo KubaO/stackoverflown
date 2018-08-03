@@ -59,7 +59,7 @@ class ScreenshotTaker : public QObject {
       qDebug() << "Saw" << eventCount << "events before taking a screenshot.";
    }
    static void take(int n, QWidget *w) {
-      auto rect = w->frameGeometry();
+      auto rect = w->frameGeometry().adjusted(-1, -1, 1, 1);
       QPixmap pix;
 #if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
       auto *const win = w->windowHandle();

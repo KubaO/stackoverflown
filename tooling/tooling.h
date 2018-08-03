@@ -13,6 +13,10 @@ class QWidget;
 
 namespace tooling {
 
+namespace detail {
+struct ContextTracker;
+}
+
 struct HostOsInfo {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && defined(QT_WIDGETS_LIB) || \
     QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && defined(QT_GUI_LIB)
@@ -37,6 +41,18 @@ void showTime(const char *name = {});
 bool isAncestorOf(QObject *ancestor, QObject *obj);
 bool showInGraphicalShell(QObject *parent, const QString &pathIn);
 void takeScreenshot(QWidget *widget);
+
+class EventLoopContext {
+   Q_DISABLE_COPY(EventLoopContext)
+   friend struct detail::ContextTracker;
+   detail::ContextTracker *p = nullptr;
+
+  public:
+   EventLoopContext() = default;
+   ~EventLoopContext();
+   bool needsRearm() const { return !p; }
+   void rearm();
+};
 
 namespace detail {
 

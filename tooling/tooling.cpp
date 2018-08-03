@@ -14,7 +14,29 @@ struct Hook {
    bool operator==(const Hook &o) const { return o.type == type && o.fun == fun; }
 };
 
-Q_GLOBAL_STATIC(QVector<Hook>, hooks);
+Q_GLOBAL_STATIC(QVector<Hook>, hooks)
+
+namespace detail {
+struct ContextTracker : public QEvent {
+   EventLoopContext *ctx;
+   ContextTracker(EventLoopContext *ctx) : QEvent(QEvent::None), ctx(ctx) {}
+   ~ContextTracker() override {
+      if (ctx) ctx->p = 0;
+   }
+};
+}  // namespace detail
+
+EventLoopContext::~EventLoopContext() {
+   if (!needsRearm()) p->ctx = nullptr;
+}
+
+void EventLoopContext::rearm() {
+   auto *dsp = QAbstractEventDispatcher::instance();
+   if (dsp && needsRearm()) {
+      p = new detail::ContextTracker(this);
+      QCoreApplication::postEvent(dsp, p, Qt::HighEventPriority + 1);
+   }
+}
 
 void showTime(const char *name) {
    auto time = QTime::currentTime().toString("HH:mm:ss.zzz");

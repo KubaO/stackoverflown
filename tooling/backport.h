@@ -3,13 +3,14 @@
 
 #include "tooling.h"
 
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <QStandardPaths>
+#endif
 #include <QAbstractEventDispatcher>
 #include <QCoreApplication>
 #include <QStringList>
 #include <QTimer>
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#include <QStandardPaths>
-#endif
+#include <type_traits>
 
 #ifndef QT_HAS_INCLUDE
 #ifdef __has_include
@@ -26,6 +27,15 @@ QT_END_NAMESPACE
 namespace tooling {
 
 using QT_PREPEND_NAMESPACE(qDeleteInEventHandler);
+
+#if QT_VERSION < QT_VERSION_CHECK(5, 7, 0)
+template <typename T>
+constexpr typename std::add_const<T>::type &qAsConst(T &t) noexcept {
+   return t;
+}
+template <typename T>
+void qAsConst(const T &&) = delete;
+#endif
 
 template <class Fun>
 struct SingleShotHelper : QObject {

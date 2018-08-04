@@ -80,10 +80,10 @@ QWidgetList getProxiedWidgets() {
 
 static void onQApplication() {
    qDebug() << "SO Tooling: Startup";
-   for (auto it = hooks->begin(); it != hooks->end();) {
+   for (auto it = hooks()->begin(); it != hooks()->end();) {
       if (it->type == detail::HasQApplicationHook) {
          it->fun();
-         it = hooks->erase(it);
+         it = hooks()->erase(it);
       } else
          ++it;
    }
@@ -125,7 +125,7 @@ static bool hooksInitialized = [] {
 
 namespace detail {
 void registerHook(int type, void (*fun)()) {
-   if (!hooks()->contains({type, fun})) hooks->push_back({type, fun});
+   if (!hooks()->contains({type, fun})) hooks()->push_back({type, fun});
 }
 }  // namespace detail
 

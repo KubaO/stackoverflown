@@ -3,10 +3,13 @@ TOOLING_PWD=$$PWD
 
 greaterThan(QT_MAJOR_VERSION, 4) {
   qtHaveModule(widgets): TOOLING_HAS_WIDGETS = 1
+  CONFIG -= c++11
+  CONFIG *= c++14
 } else {
   contains(QT, gui): TOOLING_HAS_WIDGETS = 1
   QMAKE_CXXFLAGS -= -std=c++11
   QMAKE_CXXFLAGS *= -std=c++14
+  CONFIG -= c++11 c++14
   DEFINES += QT_WIDGETS_LIB
 }
 

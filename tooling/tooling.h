@@ -2,6 +2,9 @@
 #pragma once
 
 #include <QString>
+#ifdef QT_WIDGETS_LIB
+#include <QWidget>
+#endif
 
 #ifndef QStringLiteral
 #define QStringLiteral QString
@@ -9,7 +12,6 @@
 
 class QObject;
 class QString;
-class QWidget;
 
 namespace tooling {
 
@@ -40,7 +42,6 @@ struct HostOsInfo {
 void showTime(const char *name = {});
 bool isAncestorOf(QObject *ancestor, QObject *obj);
 bool showInGraphicalShell(QObject *parent, const QString &pathIn);
-void takeScreenshot(QWidget *widget);
 
 class EventLoopContext {
    Q_DISABLE_COPY(EventLoopContext)
@@ -53,6 +54,10 @@ class EventLoopContext {
    bool needsRearm() const { return !p; }
    void rearm();
 };
+
+#ifdef QT_WIDGETS_LIB
+void takeScreenshot(QWidget *widget);
+#endif
 
 namespace detail {
 

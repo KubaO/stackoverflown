@@ -56,11 +56,9 @@ static void onQApplication() {
    for (auto it = hooks->begin(); it != hooks->end();) {
       if (it->type == detail::HasQApplicationHook) {
          it->fun();
-      } else {
+         it = hooks->erase(it);
+      } else
          ++it;
-         continue;
-      }
-      it = hooks->erase(it);
    }
 }
 

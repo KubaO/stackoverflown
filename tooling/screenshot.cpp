@@ -3,6 +3,8 @@
 #include "backport.h"
 #include "tooling.h"
 
+#ifdef QT_WIDGETS_LIB
+
 #include <QApplication>
 #include <QDebug>
 #include <QDesktopWidget>
@@ -107,21 +109,40 @@ class ScreenshotTaker : public QObject {
 
 void takeScreenshot(QWidget *widget) {
    static int n = 1;
+
+   Q_ASSERT(widget && widget->isWindow());
+
+   if (!widget->isVisible()) {
+      qDebug() << "Skipping hidden widget" << widget;
+      return;
+   }
+   if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && HostOsInfo::isMacHost()) {
+      widget->raise();
+      qDebug() << "Raising" << widget << "for a screenshot";
+   }
    new ScreenshotTaker(n++, widget);
 }
 
 static void takeScreenshots() {
-   for (auto *widget : QApplication::topLevelWidgets()) {
-      Q_ASSERT(widget);
-      if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && HostOsInfo::isMacHost()) {
-         widget->raise();
-         qDebug() << "Raising" << widget << "for a screenshot";
-      }
-      takeScreenshot(widget);
+   if (qApp->property("no_screenshots").toBool()) {
+      qDebug() << "Screenshot: Disabled by application property";
+      return;
    }
+   int count = 0;
+   for (auto *widget : QApplication::topLevelWidgets()) {
+      takeScreenshot(widget);
+      count++;
+   }
+   qDebug() << "Screenshot: Enumerated" << count << "widgets";
 }
 
-static void startupHook() { tooling::QTimer::singleShot(0, qApp, takeScreenshots); }
+static void startupHook() {
+#ifdef NO_SCREENSHOTS
+   return;
+#endif
+   qDebug() << "Screenshot: Startup";
+   tooling::QTimer::singleShot(100, qApp, takeScreenshots);
+}
 
 static bool initialized = [] {
    detail::registerHook(detail::HasQApplicationHook, &startupHook);
@@ -129,3 +150,5 @@ static bool initialized = [] {
 }();
 
 }  // namespace tooling
+
+#endif  // QT_WIDGETS_LIB

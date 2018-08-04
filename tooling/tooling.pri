@@ -7,6 +7,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
   contains(QT, gui): TOOLING_HAS_WIDGETS = 1
   QMAKE_CXXFLAGS -= -std=c++11
   QMAKE_CXXFLAGS *= -std=c++14
+  DEFINES += QT_WIDGETS_LIB
 }
 
 !defined(NO_TOOLING) {
@@ -19,14 +20,10 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 
   SOURCES += \
     $$TOOLING_PWD/backport.cpp \
+    $$TOOLING_PWD/screenshot.cpp \
     $$TOOLING_PWD/showinshell.cpp \
     $$TOOLING_PWD/standardpaths.cpp \
     $$TOOLING_PWD/tooling.cpp
-
-  equals(TOOLING_HAS_WIDGETS, 1) {
-    SOURCES += \
-      $$TOOLING_PWD/screenshot.cpp
-  }
 }
 
 

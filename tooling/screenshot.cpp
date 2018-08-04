@@ -109,9 +109,19 @@ class ScreenshotTaker : public QObject {
 
 void takeScreenshot(QWidget *widget) {
    static int n = 1;
+   static EventLoopContext ctx;
+   static QWidgetList proxied;
 
    Q_ASSERT(widget && widget->isWindow());
 
+   if (ctx.needsRearm()) {
+      proxied = getProxiedWidgets();
+      ctx.rearm();
+   }
+   if (proxied.contains(widget)) {
+      qDebug() << "Skipping proxied widget" << widget;
+      return;
+   }
    if (!widget->isVisible()) {
       qDebug() << "Skipping hidden widget" << widget;
       return;

@@ -57,6 +57,7 @@ class EventLoopContext {
 
 #ifdef QT_WIDGETS_LIB
 void takeScreenshot(QWidget *widget);
+QWidgetList getProxiedWidgets();
 #endif
 
 namespace detail {

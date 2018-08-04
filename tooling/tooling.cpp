@@ -5,6 +5,12 @@
 #include <QAbstractEventDispatcher>
 #include <QDebug>
 #include <QTime>
+#ifdef QT_WIDGETS_LIB
+#include <QApplication>
+#include <QGraphicsProxyWidget>
+#include <QGraphicsScene>
+#include <QGraphicsView>
+#endif
 
 namespace tooling {
 
@@ -50,6 +56,27 @@ bool isAncestorOf(QObject *ancestor, QObject *obj) {
    while (obj && obj != ancestor) obj = obj->parent();
    return obj && obj == ancestor;
 }
+
+#ifdef QT_WIDGETS_LIB
+QWidgetList getProxiedWidgets() {
+   QWidgetList proxied;
+   QList<const QGraphicsView *> views;
+   QList<const QGraphicsScene *> scenes;
+   for (const auto *window : QApplication::topLevelWidgets()) {
+      if (auto *view = qobject_cast<const QGraphicsView *>(window)) views.push_back(view);
+      views.append(window->findChildren<const QGraphicsView *>());
+   }
+   for (const auto *view : qAsConst(views))
+      if (const auto *scene = view->scene())
+         if (!scenes.contains(scene)) {
+            scenes.append(scene);
+            for (const auto *item : scene->items())
+               if (auto *proxy = qgraphicsitem_cast<const QGraphicsProxyWidget *>(item))
+                  if (proxy->widget()) proxied.append(proxy->widget());
+         }
+   return proxied;
+}
+#endif
 
 static void onQApplication() {
    qDebug() << "SO Tooling: Startup";

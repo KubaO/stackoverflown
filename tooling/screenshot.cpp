@@ -33,8 +33,8 @@ struct Times {
 
 static bool isProxied(QWidget *widget) {
    static EventLoopContext ctx;
-   static QWidgetList proxied;
-   Q_ASSERT(widget && widget->isWindow());
+   static PointerList<QWidget> proxied;
+   Q_ASSERT(widget && !wasDeleted(widget) && widget->isWindow());
 
    if (ctx.needsRearm()) {
       proxied = getProxiedWidgets();
@@ -99,10 +99,17 @@ class ScreenshotTaker : public QObject {
    Phase phase = Collecting;
    QBasicTimer timer;
    QElapsedTimer time;
-   // FIXME Track widget lifetimes
    // FIXME Do not raise widgets before the event loop has started spinning
-   QWidgetList topLevels;
-   QVector<State> states;
+   struct TopLevel {
+      QPointer<QWidget> w = {};
+      State state = Initial;
+      TopLevel() = default;
+      explicit TopLevel(QWidget *w, State state = Initial) : w(w), state(state) {}
+      operator QWidget *() const { return w; }
+      QWidget *operator->() const { return w; }
+      bool operator==(QWidget *o) const { return o == w; }
+   };
+   QVector<TopLevel> topLevels;
    int leftToPaint = 0;
    void timerEvent(QTimerEvent *ev) override {
       if (ev->timerId() == timer.timerId()) {
@@ -119,15 +126,15 @@ class ScreenshotTaker : public QObject {
       phase = Screenshot;
    }
    void takeScreenshots() {
-      Q_ASSERT(topLevels.size() == states.size());
-      for (int i = 0; i < topLevels.size(); ++i) {
-         auto *const w = topLevels.at(i);
-         if (!w->isWindow())
-            qDebug() << "Skipping non-window" << w;
-         else if (isProxied(w))
-            qDebug() << "Skipping proxied widget" << w;
-         else if (states.at(i) == Painted)
-            takeScreenshot(++n, topLevels.at(i));
+      for (auto &tl : qAsConst(topLevels)) {
+         if (!tl.w)
+            continue;
+         else if (!tl->isWindow())
+            qDebug() << "Skipping non-window" << tl;
+         else if (isProxied(tl))
+            qDebug() << "Skipping proxied widget" << tl;
+         else if (tl.state == Painted)
+            takeScreenshot(++n, tl);
       }
       deleteLater();
    }
@@ -136,30 +143,27 @@ class ScreenshotTaker : public QObject {
       eventCount.fetchAndAddOrdered(1);
       if (recursed) return recursed = false;
       recursed = true;
-      Q_ASSERT(topLevels.size() == states.size());
       if (o->thread() != thread() || !o->isWidgetType()) return recursed = false;
       auto *w = static_cast<QWidget *>(o);
       auto *window = w->window();
-      int i = topLevels.indexOf(window);
-      if (phase == Collecting && i == -1) {
-         i = topLevels.size();
-         topLevels.push_back(window);
+      auto i = std::find(topLevels.begin(), topLevels.end(), w);
+      if (phase == Collecting && i == topLevels.end()) {
+         topLevels.push_back(TopLevel(window));
+         i = std::prev(topLevels.end());
          qDebug() << "Noting" << window << "for a screenshot";
-         states.push_back(Initial);
          leftToPaint++;
-      } else if (i >= 0) {
-         auto &state = states[i];
-         if (window->isVisible() && state == Initial) {
+      } else if (i != topLevels.end()) {
+         if (window->isVisible() && i->state == Initial) {
             if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && HostOsInfo::isMacHost()) {
                window->raise();
                qDebug() << "Raising" << window << "for a screenshot";
             }
             window->update();
-            state = Updated;
+            i->state = Updated;
          }
          if ((ev->type() == QEvent::Paint || ev->type() == QEvent::UpdateRequest) &&
-             state != Painted && state != Ignored) {
-            state = Painted;
+             i->state != Painted && i->state != Ignored) {
+            i->state = Painted;
             qDebug() << w << window << "painted";
             leftToPaint--;
          }
@@ -176,8 +180,7 @@ class ScreenshotTaker : public QObject {
       if (parent) {
          Q_ASSERT(parent->isWindow());
          phase = Collected;
-         topLevels.push_back(parent);
-         states.push_back(Painted);
+         topLevels.push_back(TopLevel(parent, Painted));
       } else {
          time.start();
          timer.start(Times::collect(), this);

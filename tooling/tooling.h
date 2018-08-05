@@ -18,6 +18,23 @@ class QWidget;
 
 namespace tooling {
 
+namespace detail {
+struct ContextTracker;
+}
+
+void showTime(const char *name = {});
+bool isAncestorOf(QObject *ancestor, QObject *obj);
+bool wasDeleted(const QObject *);
+bool showInGraphicalShell(QObject *parent, const QString &pathIn);
+
+#ifdef QT_WIDGETS_LIB
+void takeScreenshot(QWidget *widget);
+QWidgetList getProxiedWidgets();
+#endif
+
+enum { HasQApplicationHook };
+void registerHook(int type, void (*)());
+
 template <typename T>
 class PointerList : public QList<QPointer<T>> {
    using base = QList<QPointer<T>>;
@@ -26,7 +43,7 @@ class PointerList : public QList<QPointer<T>> {
    PointerList() = default;
    PointerList(PointerList &&) = default;
    PointerList(const PointerList &) = default;
-   PointerList(const QList<T*> &o) {
+   PointerList(const QList<T *> &o) {
       reserve(o.size());
       std::copy(o.begin(), o.end(), std::back_inserter(*this));
    }
@@ -35,10 +52,6 @@ class PointerList : public QList<QPointer<T>> {
       return *new (this) PointerList(o);
    }
 };
-
-namespace detail {
-struct ContextTracker;
-}
 
 struct HostOsInfo {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && defined(QT_WIDGETS_LIB) || \
@@ -60,11 +73,6 @@ struct HostOsInfo {
 #endif
 };
 
-void showTime(const char *name = {});
-bool isAncestorOf(QObject *ancestor, QObject *obj);
-bool wasDeleted(const QObject *);
-bool showInGraphicalShell(QObject *parent, const QString &pathIn);
-
 class EventLoopContext {
    Q_DISABLE_COPY(EventLoopContext)
    friend struct detail::ContextTracker;
@@ -76,18 +84,5 @@ class EventLoopContext {
    bool needsRearm() const { return !p; }
    void rearm();
 };
-
-#ifdef QT_WIDGETS_LIB
-void takeScreenshot(QWidget *widget);
-QWidgetList getProxiedWidgets();
-#endif
-
-namespace detail {
-
-enum { HasQApplicationHook };
-
-void registerHook(int type, void (*)());
-
-}  // namespace detail
 
 }  // namespace tooling

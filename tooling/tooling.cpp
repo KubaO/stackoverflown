@@ -15,15 +15,13 @@
 
 namespace tooling {
 
+namespace detail {
 struct Hook {
    int type;
    void (*fun)();
    bool operator==(const Hook &o) const { return o.type == type && o.fun == fun; }
 };
 
-Q_GLOBAL_STATIC(QVector<Hook>, hooks)
-
-namespace detail {
 struct ContextTracker : public QEvent {
    EventLoopContext *ctx;
    ContextTracker(EventLoopContext *ctx) : QEvent(QEvent::None), ctx(ctx) {}
@@ -38,6 +36,8 @@ struct ObjectHelper : QObject {
    }
 };
 }  // namespace detail
+
+Q_GLOBAL_STATIC(QVector<detail::Hook>, hooks)
 
 EventLoopContext::~EventLoopContext() {
    if (!needsRearm()) p->ctx = nullptr;
@@ -92,7 +92,7 @@ QWidgetList getProxiedWidgets() {
 static void onQApplication() {
    qDebug() << "SO Tooling: Startup";
    for (auto it = hooks()->begin(); it != hooks()->end();) {
-      if (it->type == detail::HasQApplicationHook) {
+      if (it->type == HasQApplicationHook) {
          it->fun();
          it = hooks()->erase(it);
       } else
@@ -134,10 +134,8 @@ static bool hooksInitialized = [] {
    return true;
 }();
 
-namespace detail {
 void registerHook(int type, void (*fun)()) {
    if (!hooks()->contains({type, fun})) hooks()->push_back({type, fun});
 }
-}  // namespace detail
 
 }  // namespace tooling

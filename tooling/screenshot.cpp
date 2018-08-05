@@ -220,7 +220,7 @@ static void takeScreenshots() {
 }
 
 static bool initialized = [] {
-   detail::registerHook(detail::HasQApplicationHook, &takeScreenshots);
+   registerHook(HasQApplicationHook, &takeScreenshots);
    return true;
 }();
 

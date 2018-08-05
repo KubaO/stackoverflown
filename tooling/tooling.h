@@ -1,10 +1,12 @@
 // https://github.com/KubaO/stackoverflown/tree/master/tooling
 #pragma once
 
+#include <QPointer>
 #include <QString>
 #ifdef QT_WIDGETS_LIB
 #include <QWidget>
 #endif
+#include <algorithm>
 
 #ifndef QStringLiteral
 #define QStringLiteral QString
@@ -12,8 +14,27 @@
 
 class QObject;
 class QString;
+class QWidget;
 
 namespace tooling {
+
+template <typename T>
+class PointerList : public QList<QPointer<T>> {
+   using base = QList<QPointer<T>>;
+
+  public:
+   PointerList() = default;
+   PointerList(PointerList &&) = default;
+   PointerList(const PointerList &) = default;
+   PointerList(const QList<T*> &o) {
+      reserve(o.size());
+      std::copy(o.begin(), o.end(), std::back_inserter(*this));
+   }
+   PointerList &operator=(const PointerList &o) {
+      this->~PointerList();
+      return *new (this) PointerList(o);
+   }
+};
 
 namespace detail {
 struct ContextTracker;
@@ -41,6 +62,7 @@ struct HostOsInfo {
 
 void showTime(const char *name = {});
 bool isAncestorOf(QObject *ancestor, QObject *obj);
+bool wasDeleted(const QObject *);
 bool showInGraphicalShell(QObject *parent, const QString &pathIn);
 
 class EventLoopContext {

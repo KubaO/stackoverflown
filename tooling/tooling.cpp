@@ -28,7 +28,13 @@ struct ContextTracker : public QEvent {
    EventLoopContext *ctx;
    ContextTracker(EventLoopContext *ctx) : QEvent(QEvent::None), ctx(ctx) {}
    ~ContextTracker() override {
-      if (ctx) ctx->p = 0;
+      if (ctx) ctx->p = nullptr;
+   }
+};
+
+struct ObjectHelper : QObject {
+   static const QObjectData *d(const QObject *o) {
+      return static_cast<const ObjectHelper *>(o)->d_ptr.data();
    }
 };
 }  // namespace detail
@@ -56,6 +62,10 @@ void showTime(const char *name) {
 bool isAncestorOf(QObject *ancestor, QObject *obj) {
    while (obj && obj != ancestor) obj = obj->parent();
    return obj && obj == ancestor;
+}
+
+bool wasDeleted(const QObject *object) {
+   return detail::ObjectHelper::d(object)->wasDeleted;
 }
 
 #ifdef QT_WIDGETS_LIB

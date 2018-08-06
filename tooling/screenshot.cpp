@@ -82,7 +82,7 @@ static void takeScreenshot(int n, QWidget *w) {
    QFile f(path.absoluteFilePath(fileName));
    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && pix.save(&f, "PNG")) {
       qDebug() << "Took screenshot of" << w << ":" << f.fileName();
-      if (!showInGraphicalShell(w, f.fileName()))
+      if (!showInGraphicalShell(w, f.fileName(), n == 1))
          qWarning()
              << "Can't invoke the graphical file shell to show screenshot location.";
    } else {

@@ -21,12 +21,13 @@ namespace tooling {
 
 namespace detail {
 struct ContextTracker;
-}
+bool showInWindowsShell(const QString &pathIn, bool deselect = false);
+}  // namespace detail
 
 void showTime(const char *name = {});
 bool isAncestorOf(QObject *ancestor, QObject *obj);
 bool wasDeleted(const QObject *);
-bool showInGraphicalShell(QObject *parent, const QString &pathIn);
+bool showInGraphicalShell(QObject *parent, const QString &pathIn, bool deselect = false);
 bool hasEventLoopSpunUp();
 
 #ifdef QT_WIDGETS_LIB

@@ -160,7 +160,7 @@ struct CallbackProcessor {
 
    bool eventHook(void **data) {
       static bool entered;
-      Q_ASSERT(!entered);
+      // Q_ASSERT(!entered); // allow reentrancy
       QScopedValueRollback<bool> rb(entered, true);
       HookData d;
       memcpy(&d, data, 3 * sizeof(void *));

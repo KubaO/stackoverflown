@@ -16,6 +16,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 !defined(NO_TOOLING) {
   greaterThan(QT_MAJOR_VERSION, 4): QT *= core
   else: QT *= core
+  win32: QT *= axcontainer
 
   HEADERS += \
     $$TOOLING_PWD/backport.h \
@@ -25,6 +26,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
     $$TOOLING_PWD/backport.cpp \
     $$TOOLING_PWD/screenshot.cpp \
     $$TOOLING_PWD/showinshell.cpp \
+    $$TOOLING_PWD/showinshell_win.cpp \
     $$TOOLING_PWD/standardpaths.cpp \
     $$TOOLING_PWD/tooling.cpp
 }

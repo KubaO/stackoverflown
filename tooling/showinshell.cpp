@@ -65,10 +65,11 @@ static QString substituteFileBrowserParameters(const QString &pre, const QString
    return cmd;
 }
 
-bool showInGraphicalShell(QObject *parent, const QString &pathIn) {
+bool showInGraphicalShell(QObject *parent, const QString &pathIn, bool deselect) {
    const QFileInfo fileInfo(pathIn);
    // Mac, Windows support folder or file.
    if (HostOsInfo::isWindowsHost()) {
+      if (detail::showInWindowsShell(pathIn, deselect)) return true;
       const auto explorer = QStandardPaths::findExecutable(QLatin1String("explorer.exe"));
       if (explorer.isEmpty()) {
 #ifdef TOOLING_HAS_WIDGETS

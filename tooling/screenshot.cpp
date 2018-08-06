@@ -125,15 +125,18 @@ class ScreenshotTaker : public QObject {
       phase = Screenshot;
    }
    void takeScreenshots() {
-      for (auto &tl : qAsConst(topLevels)) {
-         if (!tl.w)
-            continue;
-         else if (!tl->isWindow()) {
-         } else if (isProxied(tl))
-            qDebug() << "Skipping proxied widget" << tl;
-         else if (tl.state == Painted)
-            takeScreenshot(++n, tl);
-      }
+      if (qApp->property("no_screenshots").toBool())
+         qDebug() << "Screenshot: Disabled by application property";
+      else
+         for (auto &tl : qAsConst(topLevels)) {
+            if (!tl.w)
+               continue;
+            else if (!tl->isWindow()) {
+            } else if (isProxied(tl))
+               qDebug() << "Skipping proxied widget" << tl;
+            else if (tl.state == Painted)
+               takeScreenshot(++n, tl);
+         }
       deleteLater();
    }
    bool eventFilter(QObject *o, QEvent *ev) override {

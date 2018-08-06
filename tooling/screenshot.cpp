@@ -99,7 +99,6 @@ class ScreenshotTaker : public QObject {
    Phase phase = Collecting;
    QBasicTimer timer;
    QElapsedTimer time;
-   // FIXME Do not raise widgets before the event loop has started spinning
    struct TopLevel {
       QPointer<QWidget> w = {};
       State state = Initial;
@@ -129,9 +128,8 @@ class ScreenshotTaker : public QObject {
       for (auto &tl : qAsConst(topLevels)) {
          if (!tl.w)
             continue;
-         else if (!tl->isWindow())
-            qDebug() << "Skipping non-window" << tl;
-         else if (isProxied(tl))
+         else if (!tl->isWindow()) {
+         } else if (isProxied(tl))
             qDebug() << "Skipping proxied widget" << tl;
          else if (tl.state == Painted)
             takeScreenshot(++n, tl);
@@ -146,25 +144,26 @@ class ScreenshotTaker : public QObject {
       if (o->thread() != thread() || !o->isWidgetType()) return recursed = false;
       auto *w = static_cast<QWidget *>(o);
       auto *window = w->window();
-      auto i = std::find(topLevels.begin(), topLevels.end(), w);
+      auto i = std::find(topLevels.begin(), topLevels.end(), window);
       if (phase == Collecting && i == topLevels.end()) {
          topLevels.push_back(TopLevel(window));
          i = std::prev(topLevels.end());
          qDebug() << "Noting" << window << "for a screenshot";
          leftToPaint++;
       } else if (i != topLevels.end()) {
-         if (window->isVisible() && i->state == Initial) {
-            if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && HostOsInfo::isMacHost()) {
-               window->raise();
-               qDebug() << "Raising" << window << "for a screenshot";
-            }
+         if (tooling::hasEventLoopSpunUp() && window->isVisible() &&
+             i->state == Initial) {
+            bool raise =
+                QT_VERSION < QT_VERSION_CHECK(5, 0, 0) && HostOsInfo::isMacHost();
+            qDebug() << (raise ? "Raising" : "Updating") << window << "for a screnshot";
+            if (raise) window->raise();
             window->update();
             i->state = Updated;
          }
          if ((ev->type() == QEvent::Paint || ev->type() == QEvent::UpdateRequest) &&
              i->state != Painted && i->state != Ignored) {
             i->state = Painted;
-            qDebug() << w << window << "painted";
+            (w != window ? qDebug() << window : qDebug()) << w << "painted";
             leftToPaint--;
          }
          if (leftToPaint == 0 && time.elapsed() > Times::minCollect()) {

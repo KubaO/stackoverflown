@@ -27,6 +27,7 @@ void showTime(const char *name = {});
 bool isAncestorOf(QObject *ancestor, QObject *obj);
 bool wasDeleted(const QObject *);
 bool showInGraphicalShell(QObject *parent, const QString &pathIn);
+bool hasEventLoopSpunUp();
 
 #ifdef QT_WIDGETS_LIB
 void takeScreenshot(QWidget *widget);

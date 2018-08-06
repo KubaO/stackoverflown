@@ -175,6 +175,8 @@ void registerHook(HookTypes types, const detail::Hook::Fun &hook) {
    processor()->registerHook(types, hook);
 }
 
+bool hasEventLoopSpunUp() { return processor()->fired & EventLoopSpinupHook; }
+
 static bool hooksInitialized = [] {
 #ifndef QHOOKS_H
    processor()->init();

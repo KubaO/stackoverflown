@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QPainter>
 #include <QScreen>
+
 #if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
 #include <QWindow>
 #endif
@@ -79,7 +80,7 @@ static void takeScreenshot(int n, QWidget *w) {
       path.cdUp();
       path.cdUp();
    }
-   QFile f(path.absoluteFilePath(fileName));
+   tooling::QSaveFile f(path.absoluteFilePath(fileName));
    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && pix.save(&f, "PNG")) {
       qDebug() << "Took screenshot of" << w << ":" << f.fileName();
       if (!showInGraphicalShell(w, f.fileName(), n == 1))

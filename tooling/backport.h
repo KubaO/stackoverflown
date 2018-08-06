@@ -4,10 +4,16 @@
 #include "tooling.h"
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#define TOOLING_NOSTANDARDPATHS
 #include <QStandardPaths>
+#endif
+#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
+#define TOOLING_NOSAVEFILE
+#include <QSaveFile>
 #endif
 #include <QAbstractEventDispatcher>
 #include <QCoreApplication>
+#include <QFile>
 #include <QStringList>
 #include <QTimer>
 #include <type_traits>
@@ -57,7 +63,6 @@ struct SingleShotHelper : QObject {
 };
 
 using Q_QTimer = QT_PREPEND_NAMESPACE(QTimer);
-
 class QTimerImpl : public Q_QTimer {
   public:
    QTimerImpl(QObject *parent = {});
@@ -74,13 +79,26 @@ class QTimerImpl : public Q_QTimer {
    }
 };
 
+using Q_QFile = QT_PREPEND_NAMESPACE(QFile);
+class QSaveFileImpl : public Q_QFile {
+  public:
+   using Q_QFile::Q_QFile;
+   bool commit();
+};
+
 class QStandardPathsImpl {
   public:
    static QString findExecutable(const QString &executableName,
                                  const QStringList &paths = {});
 };
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#ifdef TOOLING_NOSAVEFILE
+using QT_PREPEND_NAMESPACE(QSaveFile);
+#else
+using QSaveFile = QSaveFileImpl;
+#endif
+
+#ifdef TOOLING_NOSTANDARDPATHS
 using QT_PREPEND_NAMESPACE(QStandardPaths);
 #else
 using QStandardPaths = QStandardPathsImpl;

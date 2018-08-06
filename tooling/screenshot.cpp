@@ -44,7 +44,7 @@ static bool isProxied(QWidget *widget) {
 }
 
 static void takeScreenshot(int n, QWidget *w) {
-   auto rect = w->frameGeometry();
+   auto rect = shadowlessFrameGeometry(w->frameGeometry());
    if (HostOsInfo::isMacHost()) rect.adjust(-1, -1, 1, 1);
    QPixmap pix;
 #if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)

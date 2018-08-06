@@ -32,6 +32,7 @@ bool hasEventLoopSpunUp();
 #ifdef QT_WIDGETS_LIB
 void takeScreenshot(QWidget *widget);
 QWidgetList getProxiedWidgets();
+QRect shadowlessFrameGeometry(const QRect &);
 #endif
 
 enum HookType {

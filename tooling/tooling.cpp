@@ -14,6 +14,10 @@
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #endif
+#ifdef Q_OS_WIN32
+#define NOMINMAX
+#include <Windows.h>
+#endif
 
 namespace tooling {
 
@@ -75,6 +79,7 @@ bool wasDeleted(const QObject *object) {
 }
 
 #ifdef QT_WIDGETS_LIB
+
 QWidgetList getProxiedWidgets() {
    QWidgetList proxied;
    QList<const QGraphicsView *> views;
@@ -93,6 +98,19 @@ QWidgetList getProxiedWidgets() {
          }
    return proxied;
 }
+
+QRect shadowlessFrameGeometry(const QRect &rect) {
+   if (HostOsInfo::isWindowsHost() && QSysInfo::productVersion() == "10") {
+      bool shadows = false;
+#ifdef Q_OS_WIN32
+      BOOL value = FALSE;
+      if (SystemParametersInfoW(SPI_GETDROPSHADOW, 0, &value, 0)) shadows = value;
+#endif
+      if (shadows) return rect.adjusted(8, 0, -8, -8);
+   }
+   return rect;
+}
+
 #endif
 
 struct CallbackProcessor {

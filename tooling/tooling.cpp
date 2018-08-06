@@ -5,7 +5,9 @@
 
 #include <QAbstractEventDispatcher>
 #include <QDebug>
+#include <QScopedValueRollback>
 #include <QTime>
+#include <limits>
 #ifdef QT_WIDGETS_LIB
 #include <QApplication>
 #include <QGraphicsProxyWidget>
@@ -17,9 +19,15 @@ namespace tooling {
 
 namespace detail {
 struct Hook {
-   int type;
-   void (*fun)();
-   bool operator==(const Hook &o) const { return o.type == type && o.fun == fun; }
+   using Fun = std::function<bool(const HookData &)>;
+   using FunPtr = bool (*)(const HookData &);
+   HookTypes types;
+   Fun fun;
+   const FunPtr *funTarget() const { return fun.target<FunPtr>(); }
+   bool has(const Fun &o) const {
+      auto *oTarget = o.target<FunPtr>();
+      return funTarget() && oTarget && *funTarget() == *oTarget;
+   }
 };
 
 struct ContextTracker : public QEvent {
@@ -36,8 +44,6 @@ struct ObjectHelper : QObject {
    }
 };
 }  // namespace detail
-
-Q_GLOBAL_STATIC(QVector<detail::Hook>, hooks)
 
 EventLoopContext::~EventLoopContext() {
    if (!needsRearm()) p->ctx = nullptr;
@@ -89,53 +95,93 @@ QWidgetList getProxiedWidgets() {
 }
 #endif
 
-static void onQApplication() {
-   qDebug() << "SO Tooling: Startup";
-   for (auto it = hooks()->begin(); it != hooks()->end();) {
-      if (it->type == HasQApplicationHook) {
-         it->fun();
-         it = hooks()->erase(it);
-      } else
-         ++it;
+struct CallbackProcessor {
+   QVector<detail::Hook> hooks;
+   HookTypes fired = nullptr;
+   QEvent *loopEvent = nullptr;
+
+   bool callHooks(HookData &d) {
+      bool hookFilter = false;
+      HookTypes now = d.types;
+      if (!(fired & HasQApplicationHook) &&
+          QLatin1String(d.receiver->metaObject()->className()) == "QApplication" &&
+          QAbstractEventDispatcher::instance())
+         now |= HasQApplicationHook;
+      if (!(fired & EventLoopSpinupHook) && d.event == loopEvent)
+         now |= EventLoopSpinupHook;
+      if (!now) return hookFilter;
+      fired |= now;
+      d.types = now;
+      if (now & HasQApplicationHook) {
+         qDebug() << "SO Tooling: QApplication Startup";
+         loopEvent = new QEvent(QEvent::None);
+         QCoreApplication::postEvent(qApp, loopEvent, std::numeric_limits<int>::max());
+      }
+      if (now & EventLoopSpinupHook) {
+         qDebug() << "SO Tooling: Event Loop Spins";
+         loopEvent = nullptr;
+         hookFilter = true;
+         *d.filter = true;  // we don't want the application to see the event
+      }
+      for (auto it = hooks.begin(); it != hooks.end();) {
+         if (it->types & d.types) {
+            it->types &= (~d.types) | EventHook;
+            if (!it->types) {
+               auto fun = std::move(it->fun);
+               it = hooks.erase(it);
+               fun(d);
+            } else
+               it->fun(d);
+         } else
+            ++it;
+      }
+      if (hooks.isEmpty() && (fired & AllSingleShotHooks) == AllSingleShotHooks)
+         QInternal::unregisterCallback(QInternal::EventNotifyCallback, eventHookStatic);
+      return hookFilter;
    }
+
+   bool eventHook(void **data) {
+      static bool entered;
+      Q_ASSERT(!entered);
+      QScopedValueRollback<bool> rb(entered, true);
+      HookData d;
+      memcpy(&d, data, 3 * sizeof(void *));
+      d.types = EventHook;
+      return callHooks(d);
+   }
+
+   void registerHook(HookTypes types, const detail::Hook::Fun &hook) {
+      auto h = hooks.begin();
+      for (; h != hooks.end(); h++)
+         if (h->has(hook)) break;
+      if (h == hooks.end()) return hooks.push_back({types, hook});
+      h->types |= types;
+   }
+
+   static bool eventHookStatic(void **data);
+
+   void init() const {
+      QInternal::registerCallback(QInternal::EventNotifyCallback, eventHookStatic);
+   }
+};
+
+Q_GLOBAL_STATIC(CallbackProcessor, processor)
+
+bool CallbackProcessor::eventHookStatic(void **data) {
+   return processor()->eventHook(data);
 }
 
-static void setupCallbacks() {
-   static qInternalCallback const hook = [](void **data) {
-      static int recursionLevel;
-      static bool entered;
-      auto *const receiver = reinterpret_cast<const QObject *>(data[0]);
-      if (recursionLevel > 10) {
-         qWarning() << "Tooling startup callback: recursed too deep, level is "
-                    << recursionLevel;
-         entered = true;
-      }
-      if (entered) return false;
-      recursionLevel++;
-      entered = receiver && receiver->metaObject() &&
-                QLatin1String(receiver->metaObject()->className()) == "QApplication" &&
-                QAbstractEventDispatcher::instance();
-      if (!entered) return false;
-      onQApplication();
-      QInternal::unregisterCallback(QInternal::EventNotifyCallback, hook);
-      entered = false;
-      --recursionLevel;
-      return false;  // we don't filter the event
-   };
-   QInternal::registerCallback(QInternal::EventNotifyCallback, hook);
+void registerHook(HookTypes types, const detail::Hook::Fun &hook) {
+   processor()->registerHook(types, hook);
 }
 
 static bool hooksInitialized = [] {
 #ifndef QHOOKS_H
-   setupCallbacks();
+   processor()->init();
 #else
    qtHookData[QHooks::Startup] = reinterpret_cast<quintptr>(&onQApplication);
 #endif
    return true;
 }();
-
-void registerHook(int type, void (*fun)()) {
-   if (!hooks()->contains({type, fun})) hooks()->push_back({type, fun});
-}
 
 }  // namespace tooling

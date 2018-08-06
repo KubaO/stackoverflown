@@ -7,6 +7,7 @@
 #include <QWidget>
 #endif
 #include <algorithm>
+#include <functional>
 
 #ifndef QStringLiteral
 #define QStringLiteral QString
@@ -32,8 +33,21 @@ void takeScreenshot(QWidget *widget);
 QWidgetList getProxiedWidgets();
 #endif
 
-enum { HasQApplicationHook };
-void registerHook(int type, void (*)());
+enum HookType {
+   EventHook = 1,
+   HasQApplicationHook = 2,
+   EventLoopSpinupHook = 4,
+   AllSingleShotHooks = 6
+};
+Q_DECLARE_FLAGS(HookTypes, HookType)
+struct HookData {
+   QObject *receiver;
+   QEvent *event;
+   bool *filter;  // should the event be filtered out
+   HookTypes types;
+};
+// hook returns true if no further hooks should be processed
+void registerHook(HookTypes types, const std::function<bool(const HookData &)> &hook);
 
 template <typename T>
 class PointerList : public QList<QPointer<T>> {

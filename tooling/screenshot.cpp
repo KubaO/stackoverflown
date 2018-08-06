@@ -207,16 +207,17 @@ void takeScreenshot(QWidget *widget) {
    new ScreenshotTaker(widget);
 }
 
-static void takeScreenshots() {
+static bool takeScreenshots(const HookData &) {
 #ifdef NO_SCREENSHOTS
    return;
 #endif
    if (qApp->property("no_screenshots").toBool()) {
       qDebug() << "Screenshot: Disabled by application property";
-      return;
+      return false;
    }
    qDebug() << "Screenshot: Startup";
    new ScreenshotTaker();
+   return false;
 }
 
 static bool initialized = [] {

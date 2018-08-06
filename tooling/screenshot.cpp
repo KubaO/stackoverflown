@@ -81,7 +81,7 @@ static void takeScreenshot(int n, QWidget *w) {
    }
    QFile f(path.absoluteFilePath(fileName));
    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && pix.save(&f, "PNG")) {
-      qDebug() << "Took screenshot" << f.fileName();
+      qDebug() << "Took screenshot of" << w << ":" << f.fileName();
       if (!showInGraphicalShell(w, f.fileName()))
          qWarning()
              << "Can't invoke the graphical file shell to show screenshot location.";
@@ -119,7 +119,7 @@ class ScreenshotTaker : public QObject {
       }
    }
    void scheduleScreenshots() {
-      qDebug() << "Deferring screenshots";
+      qDebug() << "Deferring screenshots. Noted" << topLevels.count() << "widgets.";
       qApp->removeEventFilter(this);
       timer.start(Times::screenshotDelay(), this);
       phase = Screenshot;
@@ -148,7 +148,8 @@ class ScreenshotTaker : public QObject {
       if (phase == Collecting && i == topLevels.end()) {
          topLevels.push_back(TopLevel(window));
          i = std::prev(topLevels.end());
-         qDebug() << "Noting" << window << "for a screenshot";
+         if (tooling::hasEventLoopSpunUp())
+            qDebug() << "Noting" << window << "for a screenshot";
          leftToPaint++;
       } else if (i != topLevels.end()) {
          if (tooling::hasEventLoopSpunUp() && window->isVisible() &&

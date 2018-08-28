@@ -81,7 +81,7 @@ static void takeScreenshot(int n, QWidget *w) {
       path.cdUp();
    }
    tooling::QSaveFile f(path.absoluteFilePath(fileName));
-   if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && pix.save(&f, "PNG")) {
+   if (f.open(QIODevice::WriteOnly | QIODevice::Truncate) && pix.save(&f, "PNG") && f.commit()) {
       qDebug() << "Took screenshot of" << w << ":" << f.fileName();
       if (!showInGraphicalShell(w, f.fileName(), n == 1))
          qWarning()

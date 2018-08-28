@@ -61,7 +61,7 @@ class PointerList : public QList<QPointer<T>> {
    PointerList(PointerList &&) = default;
    PointerList(const PointerList &) = default;
    PointerList(const QList<T *> &o) {
-      reserve(o.size());
+      base::reserve(o.size());
       std::copy(o.begin(), o.end(), std::back_inserter(*this));
    }
    PointerList &operator=(const PointerList &o) {

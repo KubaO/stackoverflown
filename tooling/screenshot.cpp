@@ -122,7 +122,11 @@ class ScreenshotTaker : public QObject {
    void scheduleScreenshots() {
       qDebug() << "Deferring screenshots. Noted" << topLevels.count() << "widgets.";
       qApp->removeEventFilter(this);
-      timer.start(Times::screenshotDelay(), this);
+      auto additionalDelay = qApp->property("screenshot_delay").toInt();
+#ifdef SCREENSHOT_DELAY
+      additionalDelay += (SCREENSHOT_DELAY);
+#endif
+      timer.start(Times::screenshotDelay() + additionalDelay, this);
       phase = Screenshot;
    }
    void takeScreenshots() {

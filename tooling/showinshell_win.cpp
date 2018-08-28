@@ -95,7 +95,7 @@ bool showInWindowsShell(const QString &filePath, bool deselect) {
 
 namespace tooling {
 namespace detail {
-bool showInWindowsShell(const QString &filePath, bool deselect) { return false; }
+bool showInWindowsShell(const QString &, bool) { return false; }
 }  // namespace detail
 }  // namespace tooling
 

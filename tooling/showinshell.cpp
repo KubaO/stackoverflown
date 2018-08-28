@@ -89,16 +89,10 @@ bool showInGraphicalShell(QObject *parent, const QString &pathIn, bool deselect)
       param += QDir::toNativeSeparators(fileInfo.canonicalFilePath());
       return QProcess::startDetached(explorer, param);
    } else if (HostOsInfo::isMacHost()) {
-      QStringList scriptArgs;
-      scriptArgs << QLatin1String("-e")
-                 << QString::fromLatin1(
-                        "tell application \"Finder\" to reveal POSIX file \"%1\"")
-                        .arg(fileInfo.canonicalFilePath());
-      QProcess::execute(QLatin1String("/usr/bin/osascript"), scriptArgs);
-      scriptArgs.clear();
-      scriptArgs << QLatin1String("-e")
-                 << QLatin1String("tell application \"Finder\" to activate");
-      int rc = QProcess::execute(QLatin1String("/usr/bin/osascript"), scriptArgs);
+      QStringList openArgs;
+      openArgs << QLatin1String("-R")
+                 << fileInfo.canonicalFilePath();
+      int rc = QProcess::execute(QLatin1String("/usr/bin/open"), openArgs);
       return rc != -2 && rc != 1;
    } else {
       // we cannot select a file here, because no file browser really supports it...

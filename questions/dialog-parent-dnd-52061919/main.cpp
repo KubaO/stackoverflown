@@ -24,11 +24,9 @@ int main(int argc, char *argv[]) {
          if (!workaround1.isChecked())
             listWidget.setParent(&button, listWidget.windowFlags());
          else {
-            auto windowType =
-                Qt::WindowType(int(listWidget.windowFlags() & Qt::WindowType_Mask));
-            listWidget.setParent(&button,
-                                 listWidget.windowFlags() & ~Qt::WindowType_Mask);
-            listWidget.setWindowFlag(windowType);
+            auto flags = listWidget.windowFlags();
+            listWidget.setParent(&button, {});
+            listWidget.setWindowFlags(flags);
          }
          listWidget.show();
       } else {

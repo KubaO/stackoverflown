@@ -5,13 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct Node_t Node;
-typedef struct List_t List;
-typedef struct Parser_t Parser;
+typedef struct Node Node;
+typedef struct List List;
+typedef struct Parser Parser;
 
 // List of AST Nodes
 
-struct List_t {
+struct List {
    size_t size;
    size_t capacity;
    Node **data;
@@ -20,7 +20,7 @@ struct List_t {
 void List_grow_(List *list, size_t capacity) {
    assert(list);
    if (capacity >= list->capacity)
-      list->data = realloc(list->data, capacity * sizeof(struct Node_t *));
+      list->data = realloc(list->data, capacity * sizeof(Node *));
 }
 
 void List_construct(List *list, size_t capacity) {
@@ -44,9 +44,9 @@ void delete_List(List *list) {
    free(list);
 }
 
-Node **List_find(List const *list, Node *item) {
-   Node const *const *const end = list->data + list->size;
-   for (Node const *const *p = list->data; p != end; p++)
+Node **List_find(List *list, Node *item) {
+   Node **const end = list->data + list->size;
+   for (Node **p = list->data; p != end; p++)
       if (*p == item) return p;
    return NULL;
 }
@@ -70,7 +70,7 @@ bool List_remove(List *list, Node *item) {
 
 size_t List_size(List *list) { return list->size; }
 
-struct Node_t *List_at(List *list, size_t i) {
+struct Node *List_at(List *list, size_t i) {
    assert(list && i < list->size);
    return list->data[i];
 }
@@ -79,7 +79,7 @@ struct Node_t *List_at(List *list, size_t i) {
 
 typedef enum { MonomialNode, SumNode, EquationNode, SystemNode } NodeType;
 
-struct Node_t {
+struct Node {
    Node *parent;
    List children;
    double factor;
@@ -119,41 +119,51 @@ void delete_Node(Node *node) {
 // Parser
 
 typedef intptr_t rule_t;
-rule_t r_EOFT[] = { -1, 0 };
-rule_t r_WSP[]  = { -'*', -'(', ' ', -'/', '\t', -')', 0 };
-rule_t r_NL[]   = { &r_WSP, '\n', &r_WSP, 0 };
-rule_t r_LWS[]  = {};
+typedef const rule_t rule_ct;
 
-typedef enum { // ABNF Syntax
-   System   = /* LWS [Equation *(NL Equation)] LWS EOFT                 */ 1 << 1,
-   Equation = /* Left "=" Right                                         */ 1 << 2,
-   Left     = /* Sum                                                    */ 1 << 3,
-   Right    = /* Sum                                                    */ 1 << 4,
-   Sum      = /* *WSP Monomial *Term *WSP                               */ 1 << 5,
-   Term     = /* *WSP Operator *WSP *Monomial                           */ 1 << 6,
-   Operator = /* PLUSMINUS                                              */ 1 << 7,
-   Monomial = /* Factor / Factor *WSP [TIMES] *WSP Variable / Variable  */ 1 << 8,
-   Factor   = /* [Sign] *WSP Number                                     */ 1 << 9,
-   Variable = /* ALPHA                                                  */ 1 << 10,
-   Sign     = /* PLUSMINUS                                              */ 1 << 11,
-   Number   = /* (Integer [DOT Integer] / DOT Integer) [EXP [Sign] Integer] */ 1 << 12,
-   Integer  = /* 1*DIGIT                                                */ 1 << 13,
-   PLUSMINUS = /* "+"/"-"                                               */ 1 << 14,
-   DOT      = /* "."                                                    */ 1 << 15,
-   EXP      = /* "e"                                                    */ 1 << 16,
-   LWS      = /* *(WSP / LF)                                            */ 1 << 17,
-   WS       = /* *WSP                                                   */ 1 << 18,
-   NL       = /* *WSP LF *WSP                                           */ 1 << 19,
-   EOFT     = /* EOF                                                    */ 1 << 20
-} ParserState;
+#define RULES                                                                         \
+   RULE(System), RULE(Equation), RULE(Sum), RULE(Term), RULE(Monomial), RULE(Equals), \
+       RULE(Operator), RULE(Factor), RULE(Variable), RULE(Number), RULE(Exponent),    \
+       RULE(Sign), RULE(Integer), RULE(DIGIT), RULE(PLUSMINUS), RULE(WS), RULE(LWS),  \
+       RULE(NL), RULE(WSP), RULE(EOF), RULE(LF)
+#define RULE(name) name##_[]
+extern const char RULES;
+#undef RULE
+#define RULE(name) name##_[] = #name
+const char RULES;
+#undef RULE
+#undef RULES
 
-typedef enum {
-   ParseDone,
-   ParseOK,
-   ParseFail
-} ParserResult;
+// ABNF syntax; negative characters: literal terminals; '^' precedes a literal terminal;
+// clang-format off
+rule_ct syntax[] = {
+   System_,       '=', LWS_, '[', Equation_, '*', '(', NL_, Equation_, ')', ']', LWS_, EOF_, 0,
+   Equation_,     '=', Sum_, Equals_, Sum_, 0,
+   Sum_,          '=', Monomial_, '*', Term_, WS_, 0,
+   Term_,         '=', Operator_, Monomial_, 0,
+   Monomial_,     '=', Factor_, '[', Variable_, ']', '/', Variable_, 0,
+   Equals_,       '=', WS_, -'=', 0,
+   Operator_,     '=', WS_, PLUSMINUS_, 0,
+   Factor_,       '=', WS_, '[', Sign_, ']', WS_, Number_, 0,
+   Variable_,     '=', WS_, -'a', '-', -'z', 0,
+   Number_,       '=', WS_, '(', Integer_, '[', -'.', Integer_, ']', '/', -'.', Integer_, ')', '[', Exponent_, ']', 0,
+   Exponent_,     '=', -'e', '[', Sign_, ']', Integer_, ']', 0,
+   Sign_,         '=', PLUSMINUS_, 0,
+   Integer_,      '=', '1', '*', DIGIT_, 0,
+   DIGIT_,        '=', -'0', '-', -'9', 0,
+   PLUSMINUS_,    '=', -'+', '/', -'-', 0,
+   WS_,           '=', '*', WSP_, 0,
+   LWS_,          '=', '*', '(', WSP_, '/', LF_, ')', 0,
+   NL_,           '=', WS_, LF_, WS_, 0,
+   WSP_,          '=', -' ', '/', -'\t', 0,
+   EOF_,          '=', '^', EOF, 0,
+   LF_,           '=', -'\n', 0
+};
+// clang-format on
 
-struct Parser_t {
+typedef enum { ParseDone, ParseOK, ParseFail } ParserResult;
+
+struct Parser {
    Node system;
    Node *equation;
    Node *sum;
@@ -165,31 +175,29 @@ struct Parser_t {
    int integer;
 };
 
+#if 0
 ParserResult parse_EOF(Parser *p, int ch) {
    return p->result = (ch == EOF) ? ParseDone : ParseFail;
 }
 
 ParserResult parse_NL2(Parser *p, int ch) {
    if (ch != '\n') return ParseFail;
-   return (p->state = parse_NL3(p, ch));
+   //return (p->state = parse_NL3(p, ch));
 }
 
 ParserResult parse_NL(Parser *p, int ch) {
    switch (p->substate) {
-   case 0:
-      if (parseWSP(p, ch) != ParseFail) break;
-      if (ch != '\n') return p->result = ParseFail;
-      p->substate++;
-   case 2:
-      if (parseWSP(p, ch) != ParseFail) return ParseOK;
-      return ParseDone;
+      case 0:
+         if (parseWSP(p, ch) != ParseFail) break;
+         if (ch != '\n') return p->result = ParseFail;
+         p->substate++;
+      case 2:
+         if (parseWSP(p, ch) != ParseFail) return ParseOK;
+         return ParseDone;
    }
    return p->result = ParseOK;
 }
-
-
-
-
+#endif
 
 #if 0
 bool Parser_consume(Parser *p, int ch) {
@@ -218,12 +226,11 @@ bool Parser_consume(Parser *p, int ch) {
 }
 #endif
 
-void Parser_parse(Parser *p, int ch) {
-}
+void Parser_parse(Parser *p, int ch) {}
 
 void Parser_construct(Parser *parser) {
    memset(parser, 0, sizeof(Parser));
-   //parser->state = System;
+   // parser->state = System;
    Node_construct(&parser->system, SystemNode, NULL);
 }
 
@@ -242,7 +249,5 @@ void delete_Parser(Parser *parser) {
    Parser_destruct(parser);
    free(parser);
 }
-
-
 
 int main() {}

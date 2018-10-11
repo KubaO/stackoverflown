@@ -108,6 +108,8 @@ struct Group {
    const Rule *begin, *end;
    size_t minReps, maxReps;
    size_t curReps;
+   char ending;
+   bool singleItem;
 };
 
 inline size_t sizeof_Group(void) { return sizeof(Group); }
@@ -242,7 +244,7 @@ struct Parser {
 bool Parser_error(Parser *p, const char *msg) { return false; }
 
 bool Parser_parse(Parser *p, int ch) {
-   while (true) {
+   while (true) {  // iterate until a character is matched
       Node *const top = p->top;
       if (!top) return ch ? Parser_error(p, "Unmatched character") : true;
       Node *const parent = top->parent;
@@ -255,7 +257,29 @@ bool Parser_parse(Parser *p, int ch) {
       } else if (rule == '!') {
          top->keep = true;
       } else if (rule == '[') {
-         // List_push_back
+         Group *group = new_Group(top->rule - 1);
+         group->minReps = 0;
+         group->maxReps = 1;
+         group->ending = ']';
+         List_push_back_Group(&p->groups, group);
+      } else if (rule == '*') {
+         Group *group = new_Group(top->rule - 1);
+         List_push_back_Group(&p->groups, group);
+      } else if (rule == '(') {
+         Group *group = List_back_Group(&p->groups);
+         if (group->ending || group->begin < top->rule - 1) {
+            group = new_Group(top->rule - 1);
+            List_push_back_Group(&p->groups, group);
+            group->minReps = 1;
+            group->maxReps = 1;
+         }
+         group->ending = ')';
+      } else if (rule == ']' || rule == ')') {
+         Group *group = List_pop_back_Group(&p->groups);
+         char ending = group->ending;
+         delete_Group(group);
+         if (ending != rule) return Parser_error(p, "Mismatched group ending");
+
       }
 
       else if (rule >= -255 && rule < 0) {  // literal
@@ -294,7 +318,6 @@ void delete_Parser(Parser *parser) {
 int main() {
    Parser parser;
    Parser_construct(&parser);
-
 
    Parser_destruct(&parser);
 }

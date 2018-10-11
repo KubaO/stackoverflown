@@ -5,37 +5,34 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct Node Node;
+#define UNUSED(var) ((void)(var))
 typedef struct List List;
+typedef struct Group Group;
+typedef struct Node Node;
 typedef struct Parser Parser;
+typedef intptr_t Rule;
+inline size_t sizeof_Node(void);
+inline size_t sizeof_Group(void);
 
-// List of AST Nodes
+// Generic List
 
 struct List {
    size_t size;
    size_t capacity;
-   Node **data;
+   size_t elementSize;
+   void **data;
 };
 
 void List_grow_(List *list, size_t capacity) {
    assert(list);
    if (capacity >= list->capacity)
-      list->data = realloc(list->data, capacity * sizeof(Node *));
+      list->data = realloc(list->data, capacity * sizeof(void *));
 }
 
-void List_construct(List *list, size_t capacity) {
-   memset(list, 0, sizeof(List));
-   List_grow_(list, capacity);
-}
-
-void List_destruct(List *list) {
-   if (!list) return;
-   free(list->data);
-}
-
-List *new_List(size_t capacity) {
+#if 0
+List *new_List(size_t elementSize, size_t capacity) {
    List *list = malloc(sizeof(List));
-   List_construct(list, capacity);
+   List_construct(list, elementSize, capacity);
    return list;
 }
 
@@ -43,71 +40,159 @@ void delete_List(List *list) {
    List_destruct(list);
    free(list);
 }
-
-Node **List_find(List *list, Node *item) {
-   Node **const end = list->data + list->size;
-   for (Node **p = list->data; p != end; p++)
-      if (*p == item) return p;
-   return NULL;
-}
-
-void List_push_back(List *list, Node *item) {
-   assert(!List_find(list, item));
-   if (list->size >= list->capacity) List_grow_(list, 2 * list->capacity);
-   list->data[list->size++] = item;
-}
-
-bool List_remove(List *list, Node *item) {
-   size_t i = list->size;
-   while (i--)
-      if (list->data[i] == item) {
-         memmove(list->data + i, list->data + i + 1, list->size - i - 1);
-         list->size--;
-         return true;
-      }
-   return false;
-}
+#endif
 
 size_t List_size(List *list) { return list->size; }
 
-struct Node *List_at(List *list, size_t i) {
-   assert(list && i < list->size);
-   return list->data[i];
+#define DECLARE_LIST_FOR(Type)                                               \
+   void List_construct_##Type(List *list, size_t capacity) {                 \
+      memset(list, 0, sizeof(List));                                         \
+      list->elementSize = sizeof_##Type();                                   \
+      List_grow_(list, capacity);                                            \
+   }                                                                         \
+   Type **List_find_##Type(List *list, Type *item) {                         \
+      assert(list->elementSize == sizeof_##Type());                          \
+      void **const end = list->data + list->size;                            \
+      for (void **p = list->data; p != end; p++)                             \
+         if (*p == item) return p;                                           \
+      return NULL;                                                           \
+   }                                                                         \
+   void List_push_back_##Type(List *list, Type *item) {                      \
+      assert(list->elementSize == sizeof_##Type());                          \
+      assert(!List_find_##Type(list, item));                                 \
+      if (list->size >= list->capacity)                                      \
+         List_grow_(list, list->capacity ? 2 * list->capacity : 1);          \
+      list->data[list->size++] = item;                                       \
+   }                                                                         \
+   Type *List_pop_back_##Type(List *list) {                                  \
+      assert(list->elementSize == sizeof_##Type());                          \
+      assert(list->size > 0);                                                \
+      return list->data[--list->size];                                       \
+   }                                                                         \
+   Type *List_at_##Type(List *list, size_t i) {                              \
+      assert(list->elementSize == sizeof_##Type());                          \
+      assert(list &&i < list->size);                                         \
+      return list->data[i];                                                  \
+   }                                                                         \
+   Type *List_back_##Type(List *list) {                                      \
+      assert(list->elementSize == sizeof_##Type());                          \
+      assert(list && list->size);                                            \
+      return list->data[list->size - 1];                                     \
+   }                                                                         \
+   bool List_remove_##Type(List *list, Type *item) {                         \
+      assert(list->elementSize == sizeof_##Type());                          \
+      size_t i = list->size;                                                 \
+      while (i--)                                                            \
+         if (list->data[i] == item) {                                        \
+            memmove(list->data + i, list->data + i + 1, list->size - i - 1); \
+            list->size--;                                                    \
+            return true;                                                     \
+         }                                                                   \
+      return false;                                                          \
+   }                                                                         \
+   void Type##_destruct(Type *);                                             \
+   void List_destruct_##Type(List *list) {                                   \
+      if (!list) return;                                                     \
+      assert(list->elementSize == sizeof_##Type());                          \
+      size_t size = List_size(list);                                         \
+      while (size) Type##_destruct(List_at_##Type(list, --size));            \
+      free(list->data);                                                      \
+   }
+
+DECLARE_LIST_FOR(Node)
+DECLARE_LIST_FOR(Group)
+
+// ABNF Rule Group
+
+struct Group {
+   const Rule *begin, *end;
+   size_t minReps, maxReps;
+   size_t curReps;
+};
+
+inline size_t sizeof_Group(void) { return sizeof(Group); }
+
+void Group_construct(Group *group, const Rule *begin) {
+   memset(group, 0, sizeof(Group));
+   group->begin = begin;
+   group->maxReps = SIZE_MAX;
 }
+
+void Group_destruct(Group *group) { UNUSED(group); }
+
+Group *new_Group(const Rule *begin) {
+   Group *group = malloc(sizeof(Group));
+   Group_construct(group, begin);
+   return group;
+}
+
+void delete_Group(Group *group) {
+   Group_destruct(group);
+   free(group);
+}
+
+// Syntax Declarations
+
+typedef struct RuleName RuleName;
+struct RuleName {
+   const Rule *rule;
+   const char *name;
+};
+
+#define RULES     \
+   RULE(System)   \
+   RULE(Equation) \
+   RULE(Sum)      \
+   RULE(Term)     \
+   RULE(Monomial) \
+   RULE(Equals)   \
+   RULE(Operator) \
+   RULE(Factor)   \
+   RULE(Variable) \
+   RULE(Number)   \
+   RULE(Exponent) \
+   RULE(Sign)     \
+   RULE(Integer)  \
+   RULE(DIGIT) RULE(PLUSMINUS) RULE(WS) RULE(LWS) RULE(NL) RULE(WSP) RULE(EOF) RULE(LF)
+#define RULE(name) extern const Rule name##_[];
+RULES
+#undef RULE
+#define RULE(name_) {&name_##_[0], #name_},
+static RuleName ruleNames[] = {RULES};
+#undef RULE
+#undef RULES
 
 // AST Node
 
-typedef enum { MonomialNode, SumNode, EquationNode, SystemNode } NodeType;
-
 struct Node {
+   const Rule *firstRule, *rule;
    Node *parent;
    List children;
+   bool keep;
    double factor;
-   int exponent;
-   NodeType type;
    char variable;
 };
 
-void Node_construct(Node *node, NodeType type, Node *parent) {
+inline size_t sizeof_Node(void) { return sizeof(Node); }
+
+void Node_construct(Node *node, const Rule *firstRule, Node *parent) {
    memset(node, 0, sizeof(Node));
-   node->type = type;
+   node->firstRule = firstRule;
+   node->rule = firstRule;
    node->parent = parent;
-   List_construct(
-       &node->children,
-       (type == SumNode) ? 1 : (type == EquationNode) ? 2 : (type == SystemNode) ? 1 : 0);
+   List_construct_Node(&node->children, 0);
+   if (parent) List_push_back_Node(&parent->children, node);
 }
 
 void Node_destruct(Node *node) {
    if (!node) return;
-   if (node->parent) List_remove(&node->parent->children, node);
-   size_t size = List_size(&node->children);
-   while (size) Node_destruct(List_at(&node->children, --size));
-   List_destruct(&node->children);
+   if (node->parent) List_remove_Node(&node->parent->children, node);
+   List_destruct_Node(&node->children);
 }
 
-Node *new_Node(NodeType type, Node *parent) {
+Node *new_Node(const Rule *firstRule, Node *parent) {
    Node *node = malloc(sizeof(Node));
-   Node_construct(node, type, parent);
+   Node_construct(node, firstRule, parent);
    return node;
 }
 
@@ -116,127 +201,83 @@ void delete_Node(Node *node) {
    free(node);
 }
 
-// Parser
+// Syntax Definition
 
-typedef intptr_t rule_t;
-typedef const rule_t rule_ct;
-
-#define RULES                                                                         \
-   RULE(System), RULE(Equation), RULE(Sum), RULE(Term), RULE(Monomial), RULE(Equals), \
-       RULE(Operator), RULE(Factor), RULE(Variable), RULE(Number), RULE(Exponent),    \
-       RULE(Sign), RULE(Integer), RULE(DIGIT), RULE(PLUSMINUS), RULE(WS), RULE(LWS),  \
-       RULE(NL), RULE(WSP), RULE(EOF), RULE(LF)
-#define RULE(name) name##_[]
-extern const char RULES;
-#undef RULE
-#define RULE(name) name##_[] = #name
-const char RULES;
-#undef RULE
-#undef RULES
-
-// ABNF syntax; negative characters: literal terminals; '^' precedes a literal terminal;
+// ABNF Syntax with Extensions
+// -'c': literal "c"
+// '^', foo: literal foo value
+// '!': keep the node, otherwise the node is discarded from the AST in a cleanup pass
 // clang-format off
-rule_ct syntax[] = {
-   System_,       '=', LWS_, '[', Equation_, '*', '(', NL_, Equation_, ')', ']', LWS_, EOF_, 0,
-   Equation_,     '=', Sum_, Equals_, Sum_, 0,
-   Sum_,          '=', Monomial_, '*', Term_, WS_, 0,
-   Term_,         '=', Operator_, Monomial_, 0,
-   Monomial_,     '=', Factor_, '[', Variable_, ']', '/', Variable_, 0,
-   Equals_,       '=', WS_, -'=', 0,
-   Operator_,     '=', WS_, PLUSMINUS_, 0,
-   Factor_,       '=', WS_, '[', Sign_, ']', WS_, Number_, 0,
-   Variable_,     '=', WS_, -'a', '-', -'z', 0,
-   Number_,       '=', WS_, '(', Integer_, '[', -'.', Integer_, ']', '/', -'.', Integer_, ')', '[', Exponent_, ']', 0,
-   Exponent_,     '=', -'e', '[', Sign_, ']', Integer_, ']', 0,
-   Sign_,         '=', PLUSMINUS_, 0,
-   Integer_,      '=', '1', '*', DIGIT_, 0,
-   DIGIT_,        '=', -'0', '-', -'9', 0,
-   PLUSMINUS_,    '=', -'+', '/', -'-', 0,
-   WS_,           '=', '*', WSP_, 0,
-   LWS_,          '=', '*', '(', WSP_, '/', LF_, ')', 0,
-   NL_,           '=', WS_, LF_, WS_, 0,
-   WSP_,          '=', -' ', '/', -'\t', 0,
-   EOF_,          '=', '^', EOF, 0,
-   LF_,           '=', -'\n', 0
-};
+const Rule
+   System_[]      = { '!', LWS_, '[', Equation_, '*', '(', NL_, Equation_, ')', ']', LWS_, EOF_, 0 },
+   Equation_[]    = { '!', Sum_, Equals_, Sum_, 0 },
+   Sum_[]         = { Monomial_, '*', Term_, WS_, 0 },
+   Term_[]        = { Operator_, Monomial_, 0 },
+   Monomial_[]    = { '!', Factor_, '[', Variable_, ']', '/', Variable_, 0 },
+   Equals_[]      = { WS_, -'=', 0 },
+   Operator_[]    = { WS_, PLUSMINUS_, 0 },
+   Factor_[]      = { WS_, '[', Sign_, ']', WS_, Number_, 0 },
+   Variable_[]    = { WS_, -'a', '-', -'z', 0 },
+   Number_[]      = { WS_, '(', Integer_, '[', -'.', Integer_, ']', '/', -'.', Integer_, ')', '[', Exponent_, ']', 0 },
+   Exponent_[]    = { -'e', '[', Sign_, ']', Integer_, ']', 0 },
+   Sign_[]        = { PLUSMINUS_, 0 },
+   Integer_[]     = { '1', '*', DIGIT_, 0 },
+   DIGIT_[]       = { -'0', '-', -'9', 0 },
+   PLUSMINUS_[]   = { -'+', '/', -'-', 0 },
+   WS_[]          = { '*', WSP_, 0 },
+   LWS_[]         = { '*', '(', WSP_, '/', LF_, ')', 0 },
+   NL_[]          = { WS_, LF_, WS_, 0 },
+   WSP_[]         = { -' ', '/', -'\t', 0 },
+   EOF_[]         = { '^', EOF, 0 },
+   LF_[]          = { -'\n', 0 };
 // clang-format on
 
-typedef enum { ParseDone, ParseOK, ParseFail } ParserResult;
-
 struct Parser {
-   Node system;
-   Node *equation;
-   Node *sum;
-   Node *monomial;
-   ParserResult (*state)(Parser *, int);
-   ParserResult result;
-   int substate;
+   Node ast;
+   Node *top;
    int ch;
-   int integer;
+   List groups;
 };
 
-#if 0
-ParserResult parse_EOF(Parser *p, int ch) {
-   return p->result = (ch == EOF) ? ParseDone : ParseFail;
-}
+bool Parser_error(Parser *p, const char *msg) { return false; }
 
-ParserResult parse_NL2(Parser *p, int ch) {
-   if (ch != '\n') return ParseFail;
-   //return (p->state = parse_NL3(p, ch));
-}
+bool Parser_parse(Parser *p, int ch) {
+   while (true) {
+      Node *const top = p->top;
+      if (!top) return ch ? Parser_error(p, "Unmatched character") : true;
+      Node *const parent = top->parent;
+      const Rule rule = *top->rule++;
+      if (rule == 0) {  // exit node
+         if (!top->keep) delete_Node(top);
+         p->top = parent;
+      } else if (rule > 255 || rule < -255) {  // enter new node
+         p->top = new_Node((const Rule *)rule, top);
+      } else if (rule == '!') {
+         top->keep = true;
+      } else if (rule == '[') {
+         // List_push_back
+      }
 
-ParserResult parse_NL(Parser *p, int ch) {
-   switch (p->substate) {
-      case 0:
-         if (parseWSP(p, ch) != ParseFail) break;
-         if (ch != '\n') return p->result = ParseFail;
-         p->substate++;
-      case 2:
-         if (parseWSP(p, ch) != ParseFail) return ParseOK;
-         return ParseDone;
+      else if (rule >= -255 && rule < 0) {  // literal
+      }
    }
-   return p->result = ParseOK;
 }
-#endif
-
-#if 0
-bool Parser_consume(Parser *p, int ch) {
-   p->ch = ch;
-   if (p->state & Integer && (ch >= '0' && ch <= '9')) {
-       p->integer *= 10;
-       p->integer += ch;
-       return true;
-   }
-   if (p->state & PLUSMINUS && (ch == '+' || ch == '-')) return true;
-   if (p->state & DOT && (ch == '.')) return true;
-   if (p->state & EXP && (ch == 'e' || ch == 'E')) return true;
-   if (p->state & LWS) {
-      if (ch == ' ' || ch == '\t' || ch == '\n') return true;
-      p->state -= LWS;
-   }
-   if (p->state & WS) {
-      if (ch == ' ' || ch == '\t') return true;
-      p->state -= WS;
-   }
-   if (p->state & NL) {
-      if (ch == '')
-   }
-   if (p->state & EOFT && ch == EOF) return true;
-   return false;
-}
-#endif
-
-void Parser_parse(Parser *p, int ch) {}
 
 void Parser_construct(Parser *parser) {
    memset(parser, 0, sizeof(Parser));
-   // parser->state = System;
-   Node_construct(&parser->system, SystemNode, NULL);
+   Node_construct(&parser->ast, &System_[0], NULL);
+   parser->top = &parser->ast;
+   List_construct_Group(&parser->groups, 10);
+   Group *group = new_Group(parser->ast.firstRule);
+   List_push_back_Group(&parser->groups, group);
+   group->minReps = 1;
+   group->maxReps = 1;
 }
 
 void Parser_destruct(Parser *parser) {
    if (!parser) return;
-   Node_destruct(&parser->system);
+   Node_destruct(&parser->ast);
+   List_destruct_Group(&parser->groups);
 }
 
 Parser *new_Parser() {
@@ -250,4 +291,10 @@ void delete_Parser(Parser *parser) {
    free(parser);
 }
 
-int main() {}
+int main() {
+   Parser parser;
+   Parser_construct(&parser);
+
+
+   Parser_destruct(&parser);
+}

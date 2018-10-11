@@ -1,73 +1,84 @@
-// main.cpp
-#include <QtWidgets>
+// https://github.com/KubaO/stackoverflown/tree/master/questions/main.cpp
+#include <QtCore>
+#include <functional>
+#include <type_traits>
 
-template <class Base, class Derived> class MyGenericView : public Base {
-   inline Derived* dthis() { return static_cast<Derived*>(this); }
-public:
-   bool slot1Invoked, slot2Invoked, baseSlot3Invoked;
-   MyGenericView(QWidget * parent = 0) : Base(parent),
-      slot1Invoked(false), slot2Invoked(false), baseSlot3Invoked(false)
-   {
-      QObject::connect(dthis(), &Derived::mySignal, dthis(), &Derived::mySlot2); // Qt 5 style
-      QObject::connect(dthis(), &Derived::mySignal, dthis(), &Derived::mySlot3);
-   }
-   void doConnections() {
-      Q_ASSERT(qobject_cast<Derived*>(this)); // we must be of correct type at this point
-      QObject::connect(this, SIGNAL(mySignal()), SLOT(mySlot1())); // Qt 4 style
-   }
-   void mySlot1() { slot1Invoked = true; }
-   void mySlot2() { slot2Invoked = true; }
-   virtual void mySlot3() { baseSlot3Invoked = true; }
-   void emitMySignal() {
-      emit dthis()->mySignal();
-   }
-};
-
-class MyTreeWidget : public MyGenericView<QTreeWidget, MyTreeWidget> {
+class MySignaler : public QObject {
    Q_OBJECT
-public:
-   bool slot3Invoked;
-   MyTreeWidget(QWidget * parent = 0) : MyGenericView(parent), slot3Invoked(false) { doConnections(); }
+  public:
    Q_SIGNAL void mySignal();
-#ifdef Q_MOC_RUN // for slots not overridden here
-   Q_SLOT void mySlot1();
-   Q_SLOT void mySlot2();
+} signaler;
+
+#if QT_VERSION < 0x050000
+class MyObjectShared;
+class MyObjectHelper : public QObject {
+   Q_OBJECT
+   MyObjectShared *m_object;
+   void (MyObjectShared::*m_slot)();
+
+  public:
+   MyObjectHelper(MyObjectShared *object, void (MyObjectShared::*slot)())
+       : m_object(object), m_slot(slot) {
+      QObject::connect(&signaler, SIGNAL(mySignal()), this, SLOT(slot()));
+   }
+   Q_SLOT void slot() { (m_object->*m_slot)(); }
+};
 #endif
-   // visible to the C++ compiler since we override it
-   Q_SLOT void mySlot3() Q_DECL_OVERRIDE { slot3Invoked = true; }
+
+class MyObjectShared {
+   Q_DISABLE_COPY(MyObjectShared)
+#if QT_VERSION < 0x050000
+   MyObjectHelper helper;
+
+  public:
+   template <typename Derived>
+   MyObjectShared(Derived *derived) : helper(derived, &MyObjectShared::mySlot) {}
+#else
+  public:
+   template <typename Derived, typename = typename std::enable_if<
+                                   std::is_base_of<MyObjectShared, Derived>::value>::type>
+   MyObjectShared(Derived *derived) {
+      QObject::connect(&signaler, &MySignaler::mySignal,
+                       std::bind(&MyObjectShared::mySlot, derived));
+   }
+#endif
+
+   bool baseSlotCalled = false;
+   virtual void mySlot() { baseSlotCalled = true; }
 };
 
-class LaterTreeWidget : public MyTreeWidget {
+class MyObject : public QObject, public MyObjectShared {
    Q_OBJECT
-public:
-   void mySlot3() Q_DECL_OVERRIDE { } // no Q_SLOT macro - it's already a slot!
-};
-
-class MyTableWidget : public MyGenericView<QTreeWidget, MyTableWidget> {
-   Q_OBJECT
-public:
-   MyTableWidget(QWidget * parent = 0) : MyGenericView(parent) { doConnections(); }
-   Q_SIGNAL void mySignal();
+  public:
+   MyObject(QObject *parent = nullptr) : QObject(parent), MyObjectShared(this) {}
+   // optional, needed only in this immediately derived class if you want the slot to be a
+   // real slot instrumented by Qt
 #ifdef Q_MOC_RUN
-   Q_SLOT void mySlot1();
-   Q_SLOT void mySlot2();
-   Q_SLOT void mySlot3(); // for MOC only since we don't override it
+   void mySlot();
 #endif
 };
 
-int main(int argc, char *argv[])
-{
-   QApplication a(argc, argv);
-   MyTreeWidget tree;
-   MyTableWidget table;
-   Q_ASSERT(!tree.slot1Invoked && !tree.slot2Invoked && !tree.slot3Invoked);
-   emit tree.mySignal();
-   Q_ASSERT(tree.slot1Invoked && tree.slot2Invoked && tree.slot3Invoked);
-   Q_ASSERT(!table.slot1Invoked && !table.slot2Invoked && !table.baseSlot3Invoked);
-   emit table.mySignal();
-   Q_ASSERT(table.slot1Invoked && table.slot2Invoked && table.baseSlot3Invoked);
+class MyDerived : public MyObject {
+  public:
+   bool derivedSlotCalled = false;
+   void mySlot() override { derivedSlotCalled = true; }
+};
+
+void test1() {
+   MyObject base;
+   MyDerived derived;
+   Q_ASSERT(!base.baseSlotCalled);
+   Q_ASSERT(!derived.baseSlotCalled && !derived.derivedSlotCalled);
+   signaler.mySignal();
+   Q_ASSERT(base.baseSlotCalled);
+   Q_ASSERT(!derived.baseSlotCalled && derived.derivedSlotCalled);
+}
+
+int main(int argc, char *argv[]) {
+   test1();
+   QCoreApplication app(argc, argv);
+   test1();
    return 0;
 }
 
 #include "main.moc"
-

@@ -27,6 +27,15 @@ void print_nodes(const Node *n1, const Node *n2, const char *extra_label,
 const char *arity_suffix(int n);
 bool parse_line(int max_length, const char *fmt, int count, ...);
 
+static void *guarded_malloc(size_t size) {
+   void *result = malloc(size);
+   if (!result) {
+      fprintf(stdout, "Memory allocation has failed: exiting.");
+      abort();
+   }
+   return result;
+}
+
 int main() {
    Node *h1 = NULL, *h2 = NULL;
    int option;
@@ -124,7 +133,7 @@ Node *multiply(const Node *h1, const Node *h2) {
 Node *new_node(Node *prev, Node *next, int power) {
    assert(!prev || prev->power < power);
    assert(!next || next->power > power);
-   Node *node = malloc(sizeof(Node));
+   Node *node = guarded_malloc(sizeof(Node));
    node->power = power;
    node->coeff = 0;
    node->next = next;
@@ -188,7 +197,7 @@ const char *arity_suffix(int n) {
 bool parse_line(int max_length, const char *fmt, int count, ...) {
    bool result = false;
    int const buf_size = max_length + 2;  // include \n and zero termination
-   char *const buf = malloc((size_t)buf_size);
+   char *const buf = guarded_malloc((size_t)buf_size);
    char *const str = fgets(buf, buf_size, stdin);
    if (str) {
       size_t n = strlen(str);

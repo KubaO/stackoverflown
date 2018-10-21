@@ -6,24 +6,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define MAX 17
 
 typedef struct Node {
+   int power;  // primary key for sorting
    int coeff;
    struct Node *next;
 } Node;
 
-Node *new_nodes(void);
-void clear_nodes(Node *head);
-void delete_nodes(const Node *head);
-Node *new_or_clear_nodes(Node *head);
-Node *get_node(Node *head, int i);
-void read(Node *head);
+Node *new_node(Node *prev, Node *next, int power);
+Node *get_node(Node **head, Node *hint, int power);
+void delete_nodes(Node *head);
+
+Node *read(void);
 void print(const Node *head);
 Node *add(const Node *head1, const Node *head2);
 Node *multiply(const Node *head1, const Node *head2);
 
-void print_nodes(const Node *n1, const Node *n2, const char *extra_label, const Node *extra);
+void print_nodes(const Node *n1, const Node *n2, const char *extra_label,
+                 const Node *extra);
 const char *arity_suffix(int n);
 bool parse_line(int max_length, const char *fmt, int count, ...);
 
@@ -41,13 +41,13 @@ int main() {
       if (!parse_line(10, "%d", 1, &option)) continue;
       switch (option) {
          case 1:
-            h1 = new_or_clear_nodes(h1);
-            read(h1);
+            delete_nodes(h1);
+            h1 = read();
             break;
 
          case 2:
-            h2 = new_or_clear_nodes(h2);
-            read(h2);
+            delete_nodes(h2);
+            h2 = read();
             break;
 
          case 3:
@@ -55,13 +55,13 @@ int main() {
             break;
 
          case 4: {
-            const Node *sum = add(h1, h2);
+            Node *sum = add(h1, h2);
             print_nodes(h1, h2, "Sum", sum);
             delete_nodes(sum);
             break;
          }
          case 5: {
-            const Node *prod = multiply(h1, h2);
+            Node *prod = multiply(h1, h2);
             print_nodes(h1, h2, "Product", prod);
             delete_nodes(prod);
             break;
@@ -72,107 +72,107 @@ int main() {
    delete_nodes(h2);
 }
 
-void read(Node *h) {
+Node *read() {
    int n;
    printf("\n Enter number of terms: ");
-   if (!parse_line(10, "%d", 1, &n))
-      return;
+   if (!parse_line(10, "%d", 1, &n)) return NULL;
    /* read n terms */
+   Node *head = NULL;
    for (int i = 0; i < n;) {
       int power, coeff;
-      printf("\nEnter the %d%s term (power coeff): ", i+1, arity_suffix(i+1));
-      if (!parse_line(80, "%d%d", 2, &power, &coeff))
-         continue;
-      Node *p = get_node(h, power);
-      if (p) {
-         p->coeff += coeff;
-         i ++;
-      }
+      printf("\nEnter the %d%s term (power coeff): ", i + 1, arity_suffix(i + 1));
+      if (!parse_line(80, "%d%d", 2, &power, &coeff) || !coeff) continue;
+      Node *p = get_node(&head, NULL, power);
+      if (!p->coeff) i++;  // count only new terms
+      p->coeff = coeff;
    }
+   return head;
 }
 
 void print(const Node *p) {
-   for (int i = 0; p; i++, p = p->next)
-      if (p->coeff != 0) printf("%dX^%d ", p->coeff, i);
+   for (; p; p = p->next) printf("%dX^%d ", p->coeff, p->power);
+}
+
+void add_to(Node **sum, const Node *h) {
+   Node *r = NULL;
+   for (; h; h = h->next) {
+      r = get_node(sum, r, h->power);
+      r->coeff += h->coeff;
+   }
 }
 
 Node *add(const Node *h1, const Node *h2) {
-   Node *const sum = new_nodes();
-   Node *p = sum;
-   while (h1 && h2) {
-      p->coeff = h1->coeff + h2->coeff;
-      h1 = h1->next;
-      h2 = h2->next;
-      p = p->next;
-   }
+   Node *sum = NULL;
+   add_to(&sum, h1);
+   add_to(&sum, h2);
    return sum;
 }
 
 Node *multiply(const Node *h1, const Node *h2) {
-   Node *const prod = new_nodes();
-   const Node *p;
-   int i;
-   for (p = h1, i = 0; p; p = p->next, i++) {
-      const Node *q;
-      int j;
-      for (q = h2, j = 0; q; q = q->next, j++) {
-         int const coeff = p->coeff * q->coeff;
-         int power = i + j;
-         Node *r = get_node(prod, power);
-         assert(r);
-         r->coeff = r->coeff + coeff;
+   Node *prod = NULL;
+   for (const Node *p = h1; p; p = p->next) {
+      Node *r = NULL;
+      for (const Node *q = h2; q; q = q->next) {
+         int power = p->power + q->power;
+         r = get_node(&prod, r, power);
+         r->coeff += p->coeff * q->coeff;
       }
    }
    return prod;
 }
 
-static Node *new_node(Node *next) {
-   Node *p = malloc(sizeof(Node));
-   p->coeff = 0;
-   p->next = next;
-   return p;
+Node *new_node(Node *prev, Node *next, int power) {
+   assert(!prev || prev->power < power);
+   assert(!next || next->power > power);
+   Node *node = malloc(sizeof(Node));
+   node->power = power;
+   node->coeff = 0;
+   node->next = next;
+   if (prev) prev->next = node;
+   return node;
 }
 
-Node *new_nodes(void) {
-   Node *p = NULL;
-   for (int i = 0; i < MAX; i++)
-      p = new_node(p);
-   return p;
-}
-
-void delete_nodes(const Node *p) {
-   while (p) {
-      const Node *head = p;
-      p = p->next;
-      free((Node*)head);
+void delete_nodes(Node *head) {
+   while (head) {
+      Node *p = head;
+      head = head->next;
+      free(p);
    }
 }
 
-void clear_nodes(Node *p) {
-   for (; p; p = p->next)
-      p->coeff = 0;
+static bool list_contains(Node *head, Node *elt) {
+   for (; head; head = head->next)
+      if (head == elt) return true;
+   return false;
 }
 
-Node *new_or_clear_nodes(Node *p) {
-   if (p) clear_nodes(p); else p = new_nodes();
-   return p;
-}
+Node *get_node(Node **head, Node *hint, int power) {
+   Node *node = hint;
+   Node *next = hint ? hint->next : head ? *head : NULL;
+   assert(!hint || !*head || list_contains(*head, hint));
+   assert(!hint || hint->power <= power);
+   assert(!node || !next || node->power < next->power);
 
-Node *get_node(Node *node, int n) {
-   while (node && n) {
-      node = node->next;
-      n--;
+   while (next && next->power <= power) {
+      node = next;
+      next = next->next;
+   }
+   if (!node || node->power != power) {
+      assert(!node || node->power < power);
+      Node *n = new_node(node, next, power);
+      if (!node) *head = n;
+      node = n;
    }
    return node;
 }
 
-void print_nodes(const Node *h1, const Node *h2,
-                 const char *extra_label, const Node *extra) {
+void print_nodes(const Node *h1, const Node *h2, const char *extra_label,
+                 const Node *extra) {
    printf("\n1'st polynomial -> ");
    print(h1);
    printf("\n2'nd polynomial -> ");
    print(h2);
-   if (extra_label && extra) {
+   if (extra_label) {
       printf("\n %s = ", extra_label);
       print(extra);
    }
@@ -187,13 +187,13 @@ const char *arity_suffix(int n) {
 
 bool parse_line(int max_length, const char *fmt, int count, ...) {
    bool result = false;
-   int const buf_size = max_length + 2; // include \n and zero termination
-   char *const buf = malloc(buf_size);
+   int const buf_size = max_length + 2;  // include \n and zero termination
+   char *const buf = malloc((size_t)buf_size);
    char *const str = fgets(buf, buf_size, stdin);
    if (str) {
       size_t n = strlen(str);
-      if (str[n-1] == '\n') { // we must have read a whole line
-         str[n-1] = '\0'; // remove the newline
+      if (str[n - 1] == '\n') {  // we must have read a whole line
+         str[n - 1] = '\0';      // remove the newline
          va_list ap;
          va_start(ap, count);
          int rc = vsscanf(buf, fmt, ap);

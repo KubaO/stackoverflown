@@ -2,7 +2,7 @@
 // This project is compatible with Qt 4 and Qt 5
 #include <private/qiodevice_p.h>
 #include <private/qringbuffer_p.h>
-#include <QtCore>
+#include <QScopedValueRollback>
 #include <algorithm>
 #include <climits>
 
@@ -12,12 +12,12 @@
 
 class AppPipePrivate : public QIODevicePrivate {
   public:
+   const QByteArray *writeData;
 #if QT_VERSION < QT_VERSION_CHECK(5, 7, 0)
    QRingBuffer buffer;
    QRingBuffer writeBuffer;
    int writeBufferChunkSize;
 #endif
-   const QByteArray *writeData;
    AppPipePrivate() : writeData(0) { writeBufferChunkSize = 4096; }
 };
 
@@ -103,7 +103,7 @@ class AppPipe : public QIODevice {
          else
             hasOutgoingLong(data, len);
       } else
-         std::copy(data, data + len, d->writeBuffer.reserve(len));
+         std::copy(data, data + len, d->writeBuffer.reserve(qint32(len)));
       return len;
    }
    bool isSequential() const Q_DECL_OVERRIDE { return true; }

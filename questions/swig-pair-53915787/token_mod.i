@@ -1,5 +1,9 @@
-// https://github.com/KubaO/stackoverflown/tree/master/questions/swig-pair-53915787
+// token_mod.i
 %module token_mod
+%{#include "main.h"%}
+%ignore Token;
+%include "main.h"
+%rename("%s") Token;
 
 struct Token {
   %immutable word;
@@ -7,20 +11,6 @@ struct Token {
     $result = SWIG_FromCharPtrAndSize($1, (arg1)->wordlen);
   }
   const char *word;
+  %typemap (out) const char *word;
 };
 
-struct Token *get_token(void);
-
-%{
-struct Token {
-  const char *word;
-  unsigned short wordlen;
-};
-
-struct Token *get_token(void) {
-  struct Token *r = malloc(sizeof(struct Token));
-  r->word = "1234";
-  r->wordlen = 2;
-  return r;
-}
-%}

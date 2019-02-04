@@ -1,7 +1,17 @@
 // https://github.com/KubaO/stackoverflown/tree/master/questions/swig-pair-53915787
-#include <stdio.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <Python.h>
+#include "main.h"
+
+struct Token *make_token(void) {
+  struct Token *r = malloc(sizeof(struct Token));
+  r->word = "1234";
+  r->wordlen = 2;
+  return r;
+}
+
+char *word_check;
 
 #if PY_VERSION_HEX >= 0x03000000
 #  define SWIG_init    PyInit__token_mod
@@ -21,8 +31,9 @@ int main()
             "sys.path.append('.')\n"
             "import token_mod\n"
             "from token_mod import *\n"
-            "token = get_token()\n"
-            "assert token.word == '12'\n");
+            "token = make_token()\n"
+            "cvar.word_check = token.word\n");
+   assert(word_check && strcmp(word_check, "12") == 0);
    Py_Finalize();
    return 0;
 }

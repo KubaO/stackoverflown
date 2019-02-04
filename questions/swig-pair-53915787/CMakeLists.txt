@@ -1,16 +1,13 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.2)
 
-set(UseSWIG_TARGET_NAME_PREFERENCE STANDARD)
-
-project(swig-pair-53915787)
+set(Python_ADDITIONAL_VERSIONS 3.6)
+project(swig-pair)
 find_package(SWIG 3.0 REQUIRED)
-find_package(PythonLibs 2.7 REQUIRED)
+find_package(PythonLibs 3.6 REQUIRED)
 include(UseSwig)
 
-swig_add_library(token TYPE STATIC LANGUAGE Python SOURCES "token_mod.i" )
-target_include_directories(token PUBLIC ${PYTHON_INCLUDE_DIRS} )
-target_link_libraries(token PUBLIC ${PYTHON_LIBRARIES} )
-
-add_executable(${PROJECT_NAME} "main.c")
-target_link_libraries(${PROJECT_NAME} token)
-
+SWIG_MODULE_INITIALIZE(${PROJECT_NAME} python)
+SWIG_ADD_SOURCE_TO_MODULE(${PROJECT_NAME} swig_generated_sources "token_mod.i")
+add_executable(${PROJECT_NAME} "main.c" ${swig_generated_sources})
+target_include_directories(${PROJECT_NAME} PRIVATE ${PYTHON_INCLUDE_DIRS} ".")
+target_link_libraries(${PROJECT_NAME} PRIVATE ${PYTHON_LIBRARIES})

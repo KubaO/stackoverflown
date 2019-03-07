@@ -19,7 +19,7 @@ void Bytes_truncate(Bytes bytes, size_t new_size);
 void free_Bytes(cBytes bytes);
 char *Bytes_to_hex(cBytes bytes);
 
-static inline void Bytes_set_bit(Bytes bytes, size_t bit_num) {
+static inline void Bytes_set_bit(Bytes const bytes, size_t const bit_num) {
    bytes[bit_num / 8] |= 1 << (bit_num % 8);
 }
 
@@ -36,12 +36,21 @@ typedef enum {
    CLR_ZERO_MASK = ~ZERO,
 } DivFlags;
 
-DivFlags divideBy2(char *decimal);
-Bytes base10to256(const char *decimal);
+DivFlags divide_by_2(char *decimal);
+Bytes base_10_to_256(const char *decimal);
 
 // Division and Base Conversion Implementation
 
-DivFlags divideBy2(char *decimal) {
+static inline int leading_zero_count(DivFlags const flags) {
+   return (flags & LEADING_ZERO_COUNT_MASK) / LEADING_ZERO_COUNT;
+}
+
+static inline void saturated_inc_leading_zero_count(DivFlags *flags) {
+   if ((*flags & LEADING_ZERO_COUNT_MASK) != LEADING_ZERO_COUNT_MASK)
+      *flags += LEADING_ZERO_COUNT;
+}
+
+DivFlags divide_by_2(char *decimal) {
    DivFlags flags = ZERO;
    if (!decimal) return flags | NULL_DECIMAL;
    char c;
@@ -57,43 +66,39 @@ DivFlags divideBy2(char *decimal) {
       if (c)
          flags &= CLR_ZERO_MASK;
       else if (flags & ZERO)
-         if ((flags & LEADING_ZERO_COUNT_MASK) != LEADING_ZERO_COUNT_MASK)
-            flags += LEADING_ZERO_COUNT;
+         saturated_inc_leading_zero_count(&flags);
       *decimal++ = c + '0';
    }
    return flags;
 }
 
-static void base10to256_impl(Bytes const bytes, char *decimal, size_t len);
+static void base_10_to_256_impl(Bytes bytes, char *decimal);
 
-Bytes base10to256(const char *decimal) {
+Bytes base_10_to_256(const char *const decimal) {
    assert(decimal);
    size_t const dec_len = strlen(decimal);
    char *const dec_buf = malloc(dec_len + 1);
    if (!dec_buf) return NULL;
    memcpy(dec_buf, decimal, dec_len + 1);
 
-   const size_t BASE_RATIO_NUM = 416, /* ceil(log(10)/log(256)*1000) */
+   size_t const BASE_RATIO_NUM = 416, /* ceil(log(10)/log(256)*1000) */
        BASE_RATIO_DENOM = 1000;
    assert(dec_len <= (SIZE_MAX / BASE_RATIO_NUM));
-   size_t const len = (size_t)(dec_len * BASE_RATIO_NUM / BASE_RATIO_DENOM) + 1;
-   Bytes const bytes = new_Bytes(len);  // little-endian
-   if (bytes) base10to256_impl(bytes, dec_buf, len);
+   size_t const bytes_len = (size_t)(dec_len * BASE_RATIO_NUM / BASE_RATIO_DENOM) + 1;
+   Bytes const bytes = new_Bytes(bytes_len);  // little-endian
+   if (bytes) base_10_to_256_impl(bytes, dec_buf);
    free(dec_buf);
    return bytes;
 }
 
-static void base10to256_impl(Bytes const bytes, char *decimal, size_t const len) {
+static void base_10_to_256_impl(Bytes const bytes, char *decimal) {
+   size_t const len = Bytes_size(bytes);
    for (size_t bit_num = 0;; bit_num++) {
-      DivFlags const flags = divideBy2(decimal);
+      DivFlags const flags = divide_by_2(decimal);
       assert(!(flags & NULL_DECIMAL));
-      decimal += flags / LEADING_ZERO_COUNT;
+      decimal += leading_zero_count(flags);
       if (flags & ZERO && !(flags & REMAINDER)) {
-         size_t new_len = ((bit_num + 7) / 8);
-         if (!new_len) {  // we leave always one byte in the array
-            bytes[0] = 0;
-            ++new_len;
-         }
+         size_t const new_len = ((bit_num + 7) / 8);
          Bytes_truncate(bytes, new_len);
          break;
       }
@@ -105,12 +110,12 @@ static void base10to256_impl(Bytes const bytes, char *decimal, size_t const len)
 
 // Tests
 
-void check_bytes(const char *decimal, const char *bytes_expected, size_t bytes_len,
-                 const char *hex_expected) {
-   cBytes bytes = base10to256(decimal);
+void check_bytes(const char *const decimal, const char *const bytes_expected,
+                 size_t const bytes_len, const char *const hex_expected) {
+   cBytes const bytes = base_10_to_256(decimal);
    assert(bytes && Bytes_size(bytes) == bytes_len);
    assert(memcmp(bytes, bytes_expected, bytes_len) == 0);
-   char *hex = Bytes_to_hex(bytes);
+   char *const hex = Bytes_to_hex(bytes);
    assert(hex && strcmp(hex, hex_expected) == 0);
    printf("%s\n", hex);
    free(hex);
@@ -141,39 +146,45 @@ struct BytesImpl {
    uint8_t data[1];
 };
 static const size_t Bytes_header_size = offsetof(struct BytesImpl, data);
+_Static_assert(offsetof(struct BytesImpl, data) == sizeof(size_t),
+               "unexpected layout of struct BytesImpl");
 
 Bytes new_Bytes(size_t size) {
-   _Static_assert(offsetof(struct BytesImpl, data) == sizeof(size_t),
-                  "unexpected layout of struct BytesImpl");
    assert(size <= SIZE_MAX - Bytes_header_size);
-   struct BytesImpl *impl = calloc(Bytes_header_size + size, 1);
+   if (!size) size++;
+   struct BytesImpl *const impl = calloc(Bytes_header_size + size, 1);
    if (!impl) return NULL;
    impl->size = size;
    return &impl->data[0];
 }
 
-static const struct BytesImpl *Bytes_get_const_impl_(cBytes bytes) {
+static const struct BytesImpl *Bytes_get_const_impl_(cBytes const bytes) {
    return (const struct BytesImpl *)(const void *)((const char *)bytes -
                                                    Bytes_header_size);
 }
 
-static struct BytesImpl *Bytes_get_impl_(Bytes bytes) {
+static struct BytesImpl *Bytes_get_impl_(Bytes const bytes) {
    return (struct BytesImpl *)(void *)((char *)bytes - Bytes_header_size);
 }
 
-size_t Bytes_size(cBytes bytes) { return Bytes_get_const_impl_(bytes)->size; }
+size_t Bytes_size(cBytes const bytes) { return Bytes_get_const_impl_(bytes)->size; }
 
-void Bytes_truncate(Bytes bytes, size_t new_size) {
-   size_t *size = &Bytes_get_impl_(bytes)->size;
+void Bytes_truncate(Bytes const bytes, size_t new_size) {
+   size_t *const size = &Bytes_get_impl_(bytes)->size;
+   if (!new_size) {
+      new_size++;  // we always leave one byte in the array
+      bytes[0] = 0;
+   }
+   assert(*size);
    if (*size <= new_size) return;
    *size = new_size;
 }
 
-void free_Bytes(cBytes bytes) {
+void free_Bytes(cBytes const bytes) {
    if (bytes) free((void *)(intptr_t)(const void *)Bytes_get_const_impl_(bytes));
 }
 
-char *Bytes_to_hex(cBytes bytes) {
+char *Bytes_to_hex(cBytes const bytes) {
    size_t n = Bytes_size(bytes);
    size_t spaces = (n - 1) / 4;
    char *const out = malloc(n * 2 + spaces + 1);

@@ -74,11 +74,11 @@ template <typename F>
 static GuardedSignalTransition<F> *addTransition(QState *src, QAbstractState *target,
                                                  const QObject *sender,
                                                  const char *signal, F &&guard) {
-   auto t = new GuardedSignalTransition<typename std::decay<F>::type>(
+   auto *tr = new GuardedSignalTransition<typename std::decay<F>::type>(
        sender, signal, std::forward<F>(guard));
-   t->setTargetState(target);
-   src->addTransition(t);
-   return t;
+   tr->setTargetState(target);
+   src->addTransition(tr);
+   return tr;
 }
 
 static bool hasLine(QIODevice *dev, const QByteArray &needle) {
@@ -90,27 +90,105 @@ static bool hasLine(QIODevice *dev, const QByteArray &needle) {
    return result;
 }
 
-void send(QAbstractState *src, QIODevice *dev, const QByteArray &data) {
-   QObject::connect(src, &QState::entered, dev, [dev, data] { dev->write(data); });
-}
+class StateBuilder {
+   QStateMachine *m_machine;
+   QIODevice *m_device;
+   QAbstractState *m_parentState = {}, *m_prevState = {}, *m_state = {};
+   QMap<QString, QAbstractTransition *> m_destinations;
+   QAbstractState *point(QAbstractTransition *tr, const QVariant &dst) {
+      Q_ASSERT(tr);
+      if (dst.canConvert<QAbstractState *>()) {
+         auto *d = qvariant_cast<QAbstractState *>(dst);
+         if (!d)
+            m_destinations.insertMulti({}, tr);
+         else
+            tr->setTargetState(d);
+         return d;
+      }
+      m_destinations.insertMulti(dst.toString(), tr);
+      return {};
+   }
+   QState *parent() const {
+      auto *p = qobject_cast<QState *>(m_parentState);
+      return p ? p : m_machine;
+   }
+   QAbstractState *src() const {
+      Q_ASSERT(m_state);
+      return m_state;
+   }
+   QState *srcState() {
+      Q_ASSERT(m_state);
+      return qobject_cast<QState *>(m_state);
+   }
+   template <typename T>
+   T *childState(const QString &name) const {
+      return parent() ? parent()->findChild<T *>(name, Qt::FindDirectChildrenOnly)
+                      : nullptr;
+   }
 
-QTimer *delay(QState *src, int ms, QAbstractState *dst) {
-   auto timer = new QTimer(src);
-   timer->setSingleShot(true);
-   timer->setInterval(ms);
-   QObject::connect(src, &QState::entered, timer,
-                    static_cast<void (QTimer::*)()>(&QTimer::start));
-   QObject::connect(src, &QState::exited, timer, &QTimer::stop);
-   src->addTransition(timer, SIGNAL(timeout()), dst);
-   return timer;
-}
+  public:
+   struct TargetState : public QVariant {
+      TargetState() = default;
+      TargetState(const QString &s) : QVariant(s) {}
+      TargetState(const char *s) : QVariant(QLatin1String(s)) {}
+      TargetState(QAbstractState *s) : QVariant(QVariant::fromValue(s)) {}
+      explicit operator bool() const {
+         return !isNull() && (canConvert<QString>() || value<QAbstractState *>());
+      }
+   };
 
-void expect(QState *src, QIODevice *dev, const QByteArray &data, QAbstractState *dst,
-            int timeout = 0, QAbstractState *dstTimeout = nullptr) {
-   addTransition(src, dst, dev, SIGNAL(readyRead()),
-                 [dev, data] { return hasLine(dev, data); });
-   if (timeout) delay(src, timeout, dstTimeout);
-}
+   explicit StateBuilder(QStateMachine *machine) : m_machine(machine) {}
+   StateBuilder &next(QAbstractState *state = {}) {
+      m_prevState = m_state;
+      m_state = state;
+      return *this;
+   }
+   template <typename T = QState, typename = typename std::enable_if<
+                                      std::is_base_of<QAbstractState, T>::value>::type>
+   StateBuilder &next(const QString &name) {
+      auto *state = childState<T>(name);
+      if (!state) {
+         state = new T(state);
+         state->setObjectName(name);
+         auto setDestinations = [this](const QString &name, QAbstractState *state) {
+            for (auto *tr : m_destinations.values(name)) tr->setTargetState(state);
+            m_destinations.remove(name);
+         };
+         setDestinations(name, state);
+         if (!name.isEmpty()) setDestinations({}, state);
+      }
+      return next(state);
+   }
+
+   void setDevice(QIODevice *dev) { m_device = dev; }
+   QTimer *delay(int ms, const TargetState &dst = {}) {
+      auto timer = new QTimer(src());
+      timer->setSingleShot(true);
+      timer->setInterval(ms);
+      QObject::connect(src(), &QState::entered, timer, QOverload<>::of(&QTimer::start));
+      QObject::connect(src(), &QState::exited, timer, &QTimer::stop);
+      auto *tr = new QSignalTransition(timer, &QTimer::timeout);
+      srcState()->addTransition(tr);
+      point(tr, dst);
+      return timer;
+   }
+   void send(QIODevice *dev, const QByteArray &data) {
+      QObject::connect(src(), &QState::entered, dev, [dev, data] { dev->write(data); });
+   }
+   void expect(QIODevice *dev, const QByteArray &data, const TargetState &dst = {},
+               int timeout = 0, const TargetState &dstTimeout = {}) {
+      point(addTransition(srcState(), {}, dev, SIGNAL(readyRead()),
+                          [dev, data] { return hasLine(dev, data); }),
+            dst);
+      if (timeout) delay(timeout, dstTimeout);
+   }
+   void send(const QByteArray &data) { send(m_device, data); }
+   void expect(const QByteArray &data, const TargetState &dst = {}, int timeout = 0,
+               const TargetState &dstTimeout = {}) {
+      expect(m_device, data, dst, timeout, dstTimeout);
+   }
+   void final(const QString &name = {}) {}
+};
 
 //
 
@@ -119,6 +197,10 @@ class StatefulObject : public QObject {
    Q_PROPERTY(bool running READ isRunning NOTIFY runningChanged)
   protected:
    QStateMachine m_mach{this};
+   StateBuilder m_builder{&m_mach};
+   StateBuilder &sb() { return m_builder; }
+   StateBuilder &on(const QString &name) { return m_builder.next(name); }
+   StateBuilder &on(QAbstractState *state) { return m_builder.next(state); }
    StatefulObject(QObject *parent = 0) : QObject(parent) {}
    void connectSignals() {
       connect(&m_mach, &QStateMachine::runningChanged, this,
@@ -149,19 +231,23 @@ typedef NamedState<QFinalState> FinalState;
 class Device : public StatefulObject {
    Q_OBJECT
    AppPipe m_dev{nullptr, QIODevice::ReadWrite, this};
+#if 0
    State s_init{&m_mach, "s_init"}, s_booting{&m_mach, "s_booting"},
        s_firmware{&m_mach, "s_firmware"};
    FinalState s_loaded{&m_mach, "s_loaded"};
+#endif
 
   public:
    Device(QObject *parent = 0) : StatefulObject(parent) {
       connectSignals();
       m_mach.setInitialState(&s_init);
-      expect(&s_init, &m_dev, "boot", &s_booting);
-      delay(&s_booting, 500, &s_firmware);
-      send(&s_firmware, &m_dev, "boot successful\n");
-      expect(&s_firmware, &m_dev, ":00000001FF", &s_loaded);
-      send(&s_loaded, &m_dev, "load successful\n");
+      m_builder.setDevice(&m_dev);
+      on("s_init").expect("boot");
+      on("s_booting").delay(500);
+      on("s_firmware").send("boot successful\n");
+      sb().expect(":00000001FF");
+      on("s_loaded").send("load successful\n");
+      sb().final("s_loaded");
    }
    Q_SLOT void stop() { m_mach.stop(); }
    AppPipe &pipe() { return m_dev; }
@@ -170,17 +256,22 @@ class Device : public StatefulObject {
 class Programmer : public StatefulObject {
    Q_OBJECT
    AppPipe m_port{nullptr, QIODevice::ReadWrite, this};
+#if 0
    State s_boot{&m_mach, "s_boot"}, s_send{&m_mach, "s_send"};
    FinalState s_ok{&m_mach, "s_ok"}, s_failed{&m_mach, "s_failed"};
+#endif
 
   public:
    Programmer(QObject *parent = 0) : StatefulObject(parent) {
       connectSignals();
       m_mach.setInitialState(&s_boot);
-      send(&s_boot, &m_port, "boot\n");
-      expect(&s_boot, &m_port, "boot successful", &s_send, 1000, &s_failed);
-      send(&s_send, &m_port, ":HULLOTHERE\n:00000001FF\n");
-      expect(&s_send, &m_port, "load successful", &s_ok, 1000, &s_failed);
+      m_builder.setDevice(&m_port);
+      on("s_boot").send("boot\n");
+      sb().expect("boot successful", "s_send", 1000, "s_failed");
+      on("s_send").send(":HULLOTHERE\"n:00000001FF\n");
+      sb().expect("load successful", "s_ok", 1000, "s_failed");
+      sb().final("s_ok");
+      sb().final("s_failed");
    }
    AppPipe &pipe() { return m_port; }
 };

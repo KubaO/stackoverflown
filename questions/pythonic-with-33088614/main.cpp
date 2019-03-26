@@ -32,18 +32,42 @@ class context_manager : public context_manager_base<T> {};
 static class else_t *else_;
 class pass_exceptions_t {};
 
+void test() {
+   /*
+    * with<a>() >> with<b>() >= []{ };
+    *
+    *               >=
+    *         >>    ,     []{}
+    * with<a>(),with<b>()
+   */
+}
+
+template <typename T> struct with1;
+
+template <typename... Ts> struct with_list {
+   std::tuple<Ts...> params;
+   template <typename U> with_list<Ts..., U> operator>>(with1<U> &) {}
+   template <typename F> with_list operator>=(F&&f) {
+      std::apply(f, params);
+   }
+};
+
+template <typename T> struct with1 {
+   template<typename U> with_list<T, U> operator>>(with1<U> &) { return {this}; }
+};
+
 template <typename T>
-class with_impl {
+class with {
    context_manager<T> mgr;
    bool ok;
    enum class Stage { WITH, ELSE, DONE } stage = Stage::WITH;
    std::exception_ptr exception = {};
 
   public:
-   with_impl(const with_impl &) = delete;
-   with_impl(with_impl &&) = delete;
+   with(const with &) = delete;
+   with(with &&) = delete;
    template <typename... Ts>
-   explicit with_impl(Ts &&... args) {
+   explicit with(Ts &&... args) {
       try {
          ok = mgr.enter(std::forward<Ts>(args)...);
       } catch (...) {
@@ -51,18 +75,18 @@ class with_impl {
       }
    }
    template <typename... Ts>
-   explicit with_impl(pass_exceptions_t, Ts &&... args) {
+   explicit with(pass_exceptions_t, Ts &&... args) {
       ok = mgr.enter(std::forward<Ts>(args)...);
    }
-   ~with_impl() {
+   ~with() {
       if (!mgr.exit(exception) && exception) std::rethrow_exception(exception);
    }
-   with_impl &operator>=(else_t *) {
+   with &operator>=(else_t *) {
       assert(stage == Stage::ELSE);
       return *this;
    }
    template <typename Fn>
-   std::enable_if_t<std::is_invocable_r_v<void, Fn, decltype(mgr.get())>, with_impl &>
+   std::enable_if_t<std::is_invocable_r_v<void, Fn, decltype(mgr.get())>, with &>
    operator>=(Fn &&fn) {
       assert(stage == Stage::WITH);
       if (ok) try {
@@ -74,7 +98,7 @@ class with_impl {
       return *this;
    }
    template <typename Fn>
-   std::enable_if_t<std::is_invocable_r_v<bool, Fn, decltype(mgr.get())>, with_impl &>
+   std::enable_if_t<std::is_invocable_r_v<bool, Fn, decltype(mgr.get())>, with &>
    operator>=(Fn &&fn) {
       assert(stage == Stage::WITH);
       if (ok) try {
@@ -86,7 +110,7 @@ class with_impl {
       return *this;
    }
    template <typename Fn>
-   std::enable_if_t<std::is_invocable_r_v<void, Fn>, with_impl &> operator>=(Fn &&fn) {
+   std::enable_if_t<std::is_invocable_r_v<void, Fn>, with &> operator>=(Fn &&fn) {
       assert(stage != Stage::DONE);
       if (stage == Stage::WITH) {
          if (ok) try {
@@ -104,7 +128,7 @@ class with_impl {
       return *this;
    }
    template <typename Fn>
-   std::enable_if_t<std::is_invocable_r_v<bool, Fn>, with_impl &> operator>=(Fn &&fn) {
+   std::enable_if_t<std::is_invocable_r_v<bool, Fn>, with &> operator>=(Fn &&fn) {
       assert(stage != Stage::DONE);
       if (stage == Stage::WITH) {
          if (ok) try {
@@ -122,11 +146,6 @@ class with_impl {
       return *this;
    }
 };
-
-template <typename T, typename... Ts>
-with_impl<T> with(Ts &&... args) {
-   return with_impl<T>(std::forward<Ts>(args)...);
-}
 
 class Resource {
    const std::string str;
@@ -167,6 +186,7 @@ class context_manager<std::FILE *> {
 };
 
 int main() {
+   with<Resource>("foo"), with<Resource>("bar") >= []{};
    // with Resource("foo"):
    //   print("* Doing work!\n")
    with<Resource>("foo") >= [&] {

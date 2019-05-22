@@ -34,14 +34,14 @@ struct BackingStoreView {
 };
 
 static auto const CP437 = QStringLiteral(
-            " ☺☻♥♦♣♠•◘○◙♂♀♪♫☼▶◀↕‼¶§▬↨↑↓→←∟↔▲▼"
-            "␣!\"#$%&'()*+,-./0123456789:;<=>?"
-            "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
-            "`abcdefghijklmnopqrstuvwxyz{|}~ "
-            "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒ"
-            "áíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐"
-            "└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀"
-            "αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ");
+            u" ☺☻♥♦♣♠•◘○◙♂♀♪♫☼▶◀↕‼¶§▬↨↑↓→←∟↔▲▼"
+            u"␣!\"#$%&'()*+,-./0123456789:;<=>?"
+            u"@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
+            u"`abcdefghijklmnopqrstuvwxyz{|}~ "
+            u"ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒ"
+            u"áíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐"
+            u"└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀"
+            u"αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ");
 
 class HexView : public QAbstractScrollArea {
     Q_OBJECT
@@ -55,7 +55,11 @@ class HexView : public QAbstractScrollArea {
     QPointF m_glyphPos;
     int m_charsPerLine, m_lines;
     QMap<QChar, QImage> m_glyphs;
+#ifdef Q_OS_WIN
+    QFont m_font{"Lucida Console", 11};
+#else
     QFont m_font{"Monaco"};
+#endif
     QFontMetricsF m_fm{m_font};
     struct DrawUnit { QPoint pos; const QImage *glyph; QColor fg, bg; };
     QFutureSynchronizer<void> m_sync;

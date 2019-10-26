@@ -1,6 +1,15 @@
+# macOS
 .DS_Store
+
+# Qt Creator state files
 *.pro.user*
 *.qmlproject.user*
+CMakeLists.txt.user*
+
+# Visual Studio state files
+.vs
+
+# Default Qt Creator build folders
 /build-*
 */build-*
 */*/build-*

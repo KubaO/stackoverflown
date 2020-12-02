@@ -1,3 +1,4 @@
+// https://github.com/KubaO/stackoverflown/blob/master/questions/morse-encoding-65095267/main.c
 // complete compileable example begins
 #include <assert.h>  // assert
 #include <math.h>    // log2

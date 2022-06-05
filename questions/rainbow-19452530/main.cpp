@@ -6,11 +6,15 @@
 #include <array>
 #include <cmath>
 
+constexpr qreal linMap(qreal x1, qreal x, qreal x2, qreal y1 = 0., qreal y2 = 1.) {
+   return y1 + (y1 - y2) * (x - x1) / (x1 - x2);
+}
+
 QColor wavelengthToColor(qreal lambda) {
    // Based on: http://www.efg2.com/Lab/ScienceAndEngineering/Spectra.htm
    // The foregoing is based on: http://www.midnightkite.com/color.html
    struct Color {
-      qreal red, green, blue;
+      qreal red = 0., green = 0., blue = 0.;
       QColor toColor(qreal factor) const {
          auto const map = [factor](qreal c) -> qreal {
             constexpr qreal gamma = 0.8;
@@ -18,14 +22,14 @@ QColor wavelengthToColor(qreal lambda) {
          };
          return QColor::fromRgbF(map(red), map(green), map(blue));
       }
-   } color{};
-
+   };
    struct Threshold {
-      qreal l1, l2;
+      qreal begin, end;
       Color (*color)(qreal);
       qreal (*factor)(qreal) = nullptr;
    };
    static const std::array<Threshold, 8> thresholds{
+      // Let the intensity fall off near the vision limits
       Threshold{380, 420, nullptr, [](qreal x){ return 0.3 + 0.7*x; }},
       Threshold{380, 440, [](qreal x){ return Color{1-x, 0, 1}; }},
       Threshold{440, 490, [](qreal x){ return Color{0, x, 1}; }},
@@ -36,27 +40,25 @@ QColor wavelengthToColor(qreal lambda) {
       Threshold{700, 780, nullptr, [](qreal x){ return 1 - 0.7*x; }}
    };
 
+   Color color;
    qreal factor = 1.0;
    for (auto &thr : thresholds) {
-      if (lambda < thr.l1 || lambda >= thr.l2) continue;
-      auto x = (thr.l1 - lambda) / (thr.l1 - thr.l2);
+      if (lambda < thr.begin || lambda >= thr.end) continue;
+      auto x = linMap(thr.begin, lambda, thr.end);
       if (thr.factor) factor = thr.factor(x);
-      // To let the intensity fall off near the vision limits
       if (thr.color) color = thr.color(x);
    }
-
    return color.toColor(factor);
 }
 
 QPixmap rainbow(int w, int h) {
    QPixmap pixmap(w, h);
    QPainter p(&pixmap);
-   qreal f1 = 1.0 / 400;
-   qreal f2 = 1.0 / 780;
+   constexpr qreal f1 = 1.0 / 400, f2 = 1.0 / 780;
    for (int x = 0; x < w; ++x) {
       // Iterate across frequencies, not wavelengths
-      qreal lambda = 1.0 / (f1 - (x / qreal(w) * (f1 - f2)));
-      p.setPen(wavelengthToColor(lambda));
+      auto freq = linMap(0, x, w, f1, f2);
+      p.setPen(wavelengthToColor(1.0 / freq));
       p.drawLine(x, 0, x, h);
    }
    return pixmap;
